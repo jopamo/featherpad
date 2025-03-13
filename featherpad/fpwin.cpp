@@ -3019,7 +3019,7 @@ static inline int trailingSpaces (const QString &str)
     }
     return i;
 }
-
+/*************************/
 static inline QStringEncoder getEncoder (const QString &encoding)
 {
     if (encoding.compare ("UTF-16", Qt::CaseInsensitive) == 0)
@@ -3034,394 +3034,171 @@ static inline QStringEncoder getEncoder (const QString &encoding)
                            : QStringConverter::Latin1);
 }
 /*************************/
-// This is for both "Save" and "Save As".
-// See savePrompt() for the meanings of "first" and its following variables.
-bool FPwin::saveFile (bool keepSyntax,
-                      int first, int last, bool closingWindow,
-                      QListWidgetItem *curItem, TabPage *curPage)
+QString FPwin::determineFileName(QString fname, TextEdit *textEdit, const QString& filter)
 {
-    if (!isReady())
-    {
+    if (fname.isEmpty()) {
+        fname = this->lastFile_;
+    } else if (!QFile::exists(fname)) {
+        fname = QFileInfo(fname).absoluteDir().filePath(tr("Untitled"));
+    }
+    return fname;
+}
+/*************************/
+void FPwin::handleSaveError(const QString &fname)
+{
+    showWarningBar(tr("Cannot save the file: ") + fname, 15);
+}
+/*************************/
+bool FPwin::handleSaveAsDialog(QString& fname, const QString& filter, Config& config)
+{
+    if (hasAnotherDialog()) return false;
+
+    updateShortcuts(true);
+    FileDialog dialog(this, config.getNativeDialog());
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setWindowTitle(tr("Save as..."));
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setNameFilter(filter);
+    dialog.setDirectory(fname.section("/", 0, -2));
+    dialog.selectFile(fname);
+    dialog.autoScroll();
+
+    if (dialog.exec()) {
+        fname = dialog.selectedFiles().at(0);
+        updateShortcuts(false);
+        return !(fname.isEmpty() || QFileInfo(fname).isDir());
+    }
+
+    updateShortcuts(false);
+    return false;
+}
+/*************************/
+void FPwin::removeTrailingSpaces(TextEdit *textEdit)
+{
+    QString lang = textEdit->getFileName().isEmpty() ? textEdit->getLang() : textEdit->getProg();
+    if (lang != "diff" && textEdit->getFileName().section('/', -1) != "locale.gen") {
+        makeBusy();
+        QTextBlock block = textEdit->document()->firstBlock();
+        QTextCursor tmpCur = textEdit->textCursor();
+        tmpCur.beginEditBlock();
+
+        while (block.isValid()) {
+            int num = trailingSpaces(block.text());
+            if (num) {
+                tmpCur.setPosition(block.position() + block.text().length());
+                tmpCur.movePosition(QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num);
+                tmpCur.removeSelectedText();
+            }
+            block = block.next();
+        }
+
+        tmpCur.endEditBlock();
+        unbusy();
+    }
+}
+/*************************/
+void FPwin::appendEmptyLine(TextEdit *textEdit)
+{
+    if (textEdit->document()->lastBlock().text().isEmpty()) return;
+
+    QTextCursor tmpCur = textEdit->textCursor();
+    tmpCur.beginEditBlock();
+    tmpCur.movePosition(QTextCursor::End);
+    tmpCur.insertBlock();
+    tmpCur.endEditBlock();
+}
+/*************************/
+bool FPwin::writeToFile(QString& fname, TextEdit *textEdit, bool MSWinLineEnd)
+{
+    QString encoding = checkToEncoding();
+    QString contents = textEdit->document()->toPlainText();
+    QTextDocumentWriter writer(fname, "plaintext");
+
+    if (encoding == "UTF-16") {
+        contents.replace("\n", "\r\n");
+        return writeEncodedFile(fname, contents);
+    } else {
+        if (MSWinLineEnd) contents.replace("\n", "\r\n");
+        return writePlainFile(fname, contents);
+    }
+}
+/*************************/
+bool FPwin::writeEncodedFile(QString& fname, const QString& contents)
+{
+    QFile file(fname);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(contents.toUtf8());
+        file.close();
+        return true;
+    }
+    return false;
+}
+/*************************/
+bool FPwin::writePlainFile(QString& fname, const QString& contents)
+{
+    QFile file(fname);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(contents.toUtf8());
+        file.close();
+        return true;
+    }
+    return false;
+}
+/*************************/
+void FPwin::updateFileProperties(QString& fname, TextEdit *textEdit)
+{
+    QFileInfo fInfo(fname);
+    textEdit->document()->setModified(false);
+    textEdit->setFileName(fname);
+    textEdit->setSize(fInfo.size());
+    textEdit->setLastModified(fInfo.lastModified());
+    ui->actionReload->setDisabled(false);
+    setTitle(fname);
+    QString tip = fname.contains("/") ? fname.section("/", 0, -2) : fInfo.absolutePath();
+    QFontMetrics metrics(QToolTip::font());
+    QString elidedTip = "<p style='white-space:pre'>" + metrics.elidedText(tip, Qt::ElideMiddle, 200 * metrics.horizontalAdvance(' ')) + "</p>";
+    ui->tabWidget->setTabToolTip(ui->tabWidget->currentIndex(), elidedTip);
+}
+/*************************/
+bool FPwin::saveFile(bool keepSyntax, int first, int last, bool closingWindow,
+                     QListWidgetItem *curItem, TabPage *curPage)
+{
+    if (!isReady()) {
         closePreviousPages_ = false;
         return false;
     }
 
     int index = ui->tabWidget->currentIndex();
-    TabPage *tabPage = qobject_cast< TabPage *>(ui->tabWidget->widget (index));
-    if (tabPage == nullptr)
-    {
+    TabPage *tabPage = qobject_cast<TabPage *>(ui->tabWidget->widget(index));
+    if (!tabPage) {
         closePreviousPages_ = false;
         return false;
     }
+
     TextEdit *textEdit = tabPage->textEdit();
     QString fname = textEdit->getFileName();
-    QString filter = tr ("All Files") + " (*)";
-    if (fname.isEmpty())
-        fname = lastFile_;
-    else if (QFileInfo (fname).fileName().contains ('.'))
-    {
-        /* if relevant, do filtering to prevent disastrous overwritings */
-        filter = QString ("*.%1;;").arg (fname.section ('.', -1, -1)) + tr ("All Files") + " (*)";
-    }
-
+    QString filter = tr("All Files") + " (*)";
     Config& config = static_cast<FPsingleton*>(qApp)->getConfig();
 
-    if (fname.isEmpty()
-        || !QFile::exists (fname)
-        || textEdit->getFileName().isEmpty())
-    {
-        bool restorable = false;
-        if (fname.isEmpty())
-        {
-            QDir dir = QDir::home();
-            fname = dir.filePath (tr ("Untitled"));
-        }
-        else if (!QFile::exists (fname))
-        {
-            QDir dir = QFileInfo (fname).absoluteDir();
-            if (!dir.exists())
-            {
-                dir = QDir::home();
-                if (textEdit->getFileName().isEmpty())
-                    filter = tr ("All Files") + " (*)";
-            }
-            /* if the removed file is opened in this tab and its
-               containing folder still exists, it's restorable */
-            else if (!textEdit->getFileName().isEmpty())
-                restorable = true;
+    if (QObject::sender() == ui->actionSaveAs || fname.isEmpty() || !QFile::exists(fname)) {
+        fname = determineFileName(fname, textEdit, filter);
 
-            /* add the file name */
-            if (!textEdit->getFileName().isEmpty())
-                fname = dir.filePath (QFileInfo (fname).fileName());
-            else
-                fname = dir.filePath (tr ("Untitled"));
-        }
-        else
-            fname = QFileInfo (fname).absoluteDir().filePath (tr ("Untitled"));
-
-        /* use Save-As for Save or saving */
-        if (!restorable
-            && QObject::sender() != ui->actionSaveAs
-            && QObject::sender() != ui->actionSaveCodec)
-        {
-            if (hasAnotherDialog())
-            {
-                closePreviousPages_ = false;
-                return false;
-            }
-            updateShortcuts (true);
-            FileDialog dialog (this, config.getNativeDialog());
-            dialog.setAcceptMode (QFileDialog::AcceptSave);
-            dialog.setWindowTitle (tr ("Save as..."));
-            dialog.setFileMode (QFileDialog::AnyFile);
-            dialog.setNameFilter (filter);
-            dialog.setDirectory (fname.section ("/", 0, -2)); // workaround for KDE
-            dialog.selectFile (fname);
-            dialog.autoScroll();
-            /*dialog.setLabelText (QFileDialog::Accept, tr ("Save"));
-            dialog.setLabelText (QFileDialog::Reject, tr ("Cancel"));*/
-            if (dialog.exec())
-            {
-                fname = dialog.selectedFiles().at (0);
-                if (fname.isEmpty() || QFileInfo (fname).isDir())
-                {
-                    updateShortcuts (false);
-                    closePreviousPages_ = false;
-                    return false;
-                }
-            }
-            else
-            {
-                updateShortcuts (false);
-                closePreviousPages_ = false;
-                return false;
-            }
-            updateShortcuts (false);
-        }
-    }
-
-    if (QObject::sender() == ui->actionSaveAs)
-    {
-        if (hasAnotherDialog())
-        {
-            closePreviousPages_ = false;
+        if (fname == "Untitled" || !handleSaveAsDialog(fname, filter, config)) {
             return false;
         }
-        updateShortcuts (true);
-        FileDialog dialog (this, config.getNativeDialog());
-        dialog.setAcceptMode (QFileDialog::AcceptSave);
-        dialog.setWindowTitle (tr ("Save as..."));
-        dialog.setFileMode (QFileDialog::AnyFile);
-        dialog.setNameFilter (filter);
-        dialog.setDirectory (fname.section ("/", 0, -2)); // workaround for KDE
-        dialog.selectFile (fname);
-        dialog.autoScroll();
-        /*dialog.setLabelText (QFileDialog::Accept, tr ("Save"));
-        dialog.setLabelText (QFileDialog::Reject, tr ("Cancel"));*/
-        if (dialog.exec())
-        {
-            fname = dialog.selectedFiles().at (0);
-            if (fname.isEmpty() || QFileInfo (fname).isDir())
-            {
-                updateShortcuts (false);
-                closePreviousPages_ = false;
-                return false;
-            }
-        }
-        else
-        {
-            updateShortcuts (false);
-            closePreviousPages_ = false;
-            return false;
-        }
-        updateShortcuts (false);
-    }
-    else if (QObject::sender() == ui->actionSaveCodec)
-    {
-        if (hasAnotherDialog())
-        {
-            closePreviousPages_ = false;
-            return false;
-        }
-        updateShortcuts (true);
-        FileDialog dialog (this, config.getNativeDialog());
-        dialog.setAcceptMode (QFileDialog::AcceptSave);
-        dialog.setWindowTitle (tr ("Keep encoding and save as..."));
-        dialog.setFileMode (QFileDialog::AnyFile);
-        dialog.setNameFilter (filter);
-        dialog.setDirectory (fname.section ("/", 0, -2)); // workaround for KDE
-        dialog.selectFile (fname);
-        dialog.autoScroll();
-        /*dialog.setLabelText (QFileDialog::Accept, tr ("Save"));
-        dialog.setLabelText (QFileDialog::Reject, tr ("Cancel"));*/
-        if (dialog.exec())
-        {
-            fname = dialog.selectedFiles().at (0);
-            if (fname.isEmpty() || QFileInfo (fname).isDir())
-            {
-                updateShortcuts (false);
-                closePreviousPages_ = false;
-                return false;
-            }
-        }
-        else
-        {
-            updateShortcuts (false);
-            closePreviousPages_ = false;
-            return false;
-        }
-        updateShortcuts (false);
     }
 
-    if (config.getRemoveTrailingSpaces())
-    {
-        QString lang = textEdit->getFileName().isEmpty() ? textEdit->getLang() : textEdit->getProg();
-        if (lang != "diff" && textEdit->getFileName().section ('/', -1) != "locale.gen")
-        {
-            /* using text blocks directly is the fastest
-               and lightest way of removing trailing spaces */
-            makeBusy();
-            bool doubleSpace (lang == "markdown" || lang == "fountain");
-            bool singleSpace (lang == "LaTeX") ;
-            QTextBlock block = textEdit->document()->firstBlock();
-            QTextCursor tmpCur = textEdit->textCursor();
-            tmpCur.beginEditBlock();
-            while (block.isValid())
-            {
-                if (const int num = trailingSpaces (block.text()))
-                {
-                    tmpCur.setPosition (block.position() + block.text().length());
-                    if (doubleSpace)
-                    { // markdown sees two trailing spaces as a new line
-                        if (num != 2)
-                            tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, std::max (1, num - 2));
-                    }
-                    else if (singleSpace)
-                    { // LaTeX takes its single trailing spaces into account
-                        if (num > 1)
-                            tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num - 1);
-                    }
-                    else
-                        tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num);
-                    tmpCur.removeSelectedText();
-                }
-                block = block.next();
-            }
-            tmpCur.endEditBlock();
-            unbusy();
-        }
-    }
+    if (config.getRemoveTrailingSpaces()) removeTrailingSpaces(textEdit);
+    if (config.getAppendEmptyLine()) appendEmptyLine(textEdit);
 
-    if (config.getAppendEmptyLine()
-        && !textEdit->document()->lastBlock().text().isEmpty())
-    {
-        QTextCursor tmpCur = textEdit->textCursor();
-        tmpCur.beginEditBlock();
-        tmpCur.movePosition (QTextCursor::End);
-        tmpCur.insertBlock();
-        tmpCur.endEditBlock();
-    }
-
-    /* now, try to write */
-    QTextDocumentWriter writer (fname, "plaintext");
-    bool success = false;
     bool MSWinLineEnd = false;
-    if (QObject::sender() == ui->actionSaveCodec)
-    {
-        if (hasAnotherDialog())
-        {
-            closePreviousPages_ = false;
-            return false;
-        }
+    bool success = writeToFile(fname, textEdit, MSWinLineEnd);
 
-        QString encoding  = checkToEncoding();
-        QString contents;
-        QStringEncoder encoder = getEncoder (encoding);
-        QByteArray encodedString;
-        const char *txt;
-
-        if (encoding == "UTF-16") // always use "\r\n" with UTF-16
-        {
-            MSWinLineEnd = true;
-            contents = textEdit->document()->toPlainText();
-            contents.replace ("\n", "\r\n");
-            size_t ln = static_cast<size_t>(contents.length()); // for fwrite()
-            encodedString = encoder.encode (contents);
-            txt = encodedString.constData();
-            FILE *file;
-            file = fopen (fname.toUtf8().constData(), "wb");
-            if (file != nullptr)
-            {
-                /* this worked correctly as far as I tested */
-                fwrite (txt , 2 , ln + 1 , file);
-                fclose (file);
-                success = true;
-            }
-        }
-        else
-        {
-            updateShortcuts (true);
-            MessageBox msgBox (this);
-            msgBox.setIcon (QMessageBox::Question);
-            msgBox.addButton (QMessageBox::Yes);
-            msgBox.addButton (QMessageBox::No);
-            msgBox.addButton (QMessageBox::Cancel);
-            msgBox.changeButtonText (QMessageBox::Yes, tr ("Yes"));
-            msgBox.changeButtonText (QMessageBox::No, tr ("No"));
-            msgBox.changeButtonText (QMessageBox::Cancel, tr ("Cancel"));
-            msgBox.setText ("<center>" + tr ("Do you want to use <b>MS Windows</b> end-of-lines?") + "</center>");
-            msgBox.setInformativeText ("<center><i>" + tr ("This may be good for readability under MS Windows.") + "</i></center>");
-            msgBox.setDefaultButton (QMessageBox::No);
-            msgBox.setWindowModality (Qt::WindowModal);
-            std::ofstream file;
-            switch (msgBox.exec()) {
-            case QMessageBox::Yes:
-                MSWinLineEnd = true;
-                contents = textEdit->document()->toPlainText();
-                contents.replace ("\n", "\r\n");
-                encodedString = encoder.encode (contents);
-                txt = encodedString.constData();
-                file.open (fname.toUtf8().constData());
-                if (file.is_open())
-                {
-                    file << txt;
-                    file.close();
-                    success = true;
-                }
-                break;
-            case QMessageBox::No:
-                contents = textEdit->document()->toPlainText();
-                encodedString = encoder.encode (contents);
-                txt = encodedString.constData();
-                file.open (fname.toUtf8().constData());
-                if (file.is_open())
-                {
-                    file << txt;
-                    file.close();
-                    success = true;
-                }
-                break;
-            default:
-                updateShortcuts (false);
-                closePreviousPages_ = false;
-                return false;
-            }
-            updateShortcuts (false);
-        }
+    if (success) {
+        updateFileProperties(fname, textEdit);
+    } else {
+        handleSaveError(fname);
     }
-    else
-        encodingToCheck ("UTF-8"); // UTF-8 is the default encoding with saving
-    if (!success)
-        success = writer.write (textEdit->document());
-
-    if (success)
-    {
-        QFileInfo fInfo (fname);
-
-        textEdit->document()->setModified (false);
-        textEdit->setFileName (fname);
-        textEdit->setSize (fInfo.size());
-        textEdit->setLastModified (fInfo.lastModified());
-        ui->actionReload->setDisabled (false);
-        setTitle (fname);
-        QString tip (fname.contains ("/") ? fname.section("/", 0, -2) : fInfo.absolutePath());
-        if (!tip.endsWith ("/")) tip += "/";
-        QFontMetrics metrics (QToolTip::font());
-        QString elidedTip = "<p style='white-space:pre'>"
-                            + metrics.elidedText (tip, Qt::ElideMiddle, 200 * metrics.horizontalAdvance (' '))
-                            + "</p>";
-        ui->tabWidget->setTabToolTip (index, elidedTip);
-        if (!sideItems_.isEmpty())
-        {
-            if (QListWidgetItem *wi = sideItems_.key (tabPage))
-                wi->setToolTip (elidedTip);
-        }
-        lastFile_ = fname;
-        addRecentFile (lastFile_);
-
-        /* if this isn't about deleting after saving, correct the
-           encoding (set it to UTF-8) if needed, as in enforceEncoding() */
-        if ((index <= first || (index >= last && last >= 0))
-            && textEdit->getEncoding() != checkToEncoding())
-        {
-            loadText (fname, true, true,
-                      0, 0,
-                      textEdit->isUneditable(), false);
-        }
-        else if (!keepSyntax)
-            reloadSyntaxHighlighter (textEdit);
-    }
-    else
-    {
-        if (QFile::exists (fname))
-        { // when every attempt at saving fails, try to save as root
-            if (!QFileInfo (fname).permission (QFile::WriteUser))
-            {
-                saveAsRoot (fname, tabPage, first, last, closingWindow, curItem, curPage, MSWinLineEnd);
-                return false; // the probable saving will be done with a delay
-            }
-        }
-        else
-        { // check the containing folder
-            QFileInfo pDir (fname.section ("/", 0, -2));
-            if (pDir.isDir() && !pDir.permission (QFile::WriteUser))
-            {
-                saveAsRoot (fname, tabPage, first, last, closingWindow, curItem, curPage, MSWinLineEnd);
-                return false;
-            }
-        }
-
-        closePreviousPages_ = false;
-        QString error = writer.device()->errorString();
-        QTimer::singleShot (0, this, [this, error]() {
-            showWarningBar ("<center><b><big>" + tr ("Cannot be saved!") + "</big></b></center>\n"
-                            + "<center><i>" + error + "</i></center>",
-                            15);
-        });
-    }
-
-    if (success && textEdit->isReadOnly() && !alreadyOpen (tabPage))
-         QTimer::singleShot (0, this, &FPwin::makeEditable);
 
     return success;
 }
