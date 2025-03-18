@@ -1255,7 +1255,7 @@ void FPwin::closePreviousPages()
 void FPwin::closeOtherPages()
 {
     /* NOTE: Because saving as root is possible, we can't close the previous pages
-             here. They will be closed by closePages() or saveAsRoot() if needed. */
+             here. They will be closed by closePages() if needed. */
     closePreviousPages_ = true;
     closePages (rightClicked_, -1);
 }
@@ -1315,10 +1315,6 @@ void FPwin::dropEvent (QDropEvent *event)
 // This method checks if there's any text that isn't saved under a tab and,
 // if there is, it activates the tab and shows an appropriate prompt dialog.
 // "tabIndex" is always the tab index and not the item row (in the side-pane).
-
-// The other variables are only for saveAsRoot(): "first and "last" determine
-// the range of indexes/rows that should be closed and "curItem"/"curPage" is
-// the item/tab that should be made current in side-pane/tab-bar again.
 FPwin::DOCSTATE FPwin::savePrompt (int tabIndex, bool noToAll,
                                    int first, int last, bool closingWindow,
                                    QListWidgetItem *curItem, TabPage *curPage)
@@ -1380,8 +1376,7 @@ FPwin::DOCSTATE FPwin::savePrompt (int tabIndex, bool noToAll,
             if (!saveFile (true, first, last, closingWindow, curItem, curPage))
             {
                 state = UNDECIDED;
-                /* NOTE: closePreviousPages_ is set to false by saveFile() if there is no
-                         root saving; otherwise, it's set by saveAsRoot() appropriately. */
+                /* NOTE: closePreviousPages_ is set to false by saveFile() */
             }
             break;
         case QMessageBox::Discard:
@@ -3059,12 +3054,17 @@ bool FPwin::handleSaveAsDialog(QString& fname, const QString& filter, Config& co
     dialog.setWindowTitle(tr("Save as..."));
     dialog.setFileMode(QFileDialog::AnyFile);
     dialog.setNameFilter(filter);
-    dialog.setDirectory(fname.section("/", 0, -2));
-    dialog.selectFile(fname);
+
+    QFileInfo fi(fname);
+    dialog.setDirectory(fi.absolutePath());
+    dialog.selectFile(fi.fileName());
     dialog.autoScroll();
 
     if (dialog.exec()) {
-        fname = dialog.selectedFiles().at(0);
+        QStringList files = dialog.selectedFiles();
+        if (!files.isEmpty()) {
+            fname = files.at(0);
+        }
         updateShortcuts(false);
         return !(fname.isEmpty() || QFileInfo(fname).isDir());
     }
@@ -3075,18 +3075,26 @@ bool FPwin::handleSaveAsDialog(QString& fname, const QString& filter, Config& co
 /*************************/
 void FPwin::removeTrailingSpaces(TextEdit *textEdit)
 {
-    QString lang = textEdit->getFileName().isEmpty() ? textEdit->getLang() : textEdit->getProg();
-    if (lang != "diff" && textEdit->getFileName().section('/', -1) != "locale.gen") {
+    QString lang = textEdit->getFileName().isEmpty()
+                   ? textEdit->getLang()
+                   : textEdit->getProg();
+
+    if (lang != "diff" &&
+        !textEdit->getFileName().endsWith("/locale.gen"))
+    {
         makeBusy();
+
         QTextBlock block = textEdit->document()->firstBlock();
         QTextCursor tmpCur = textEdit->textCursor();
         tmpCur.beginEditBlock();
 
         while (block.isValid()) {
-            int num = trailingSpaces(block.text());
-            if (num) {
+            int numTrailing = trailingSpaces(block.text());
+            if (numTrailing > 0) {
                 tmpCur.setPosition(block.position() + block.text().length());
-                tmpCur.movePosition(QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num);
+                tmpCur.movePosition(QTextCursor::PreviousCharacter,
+                                    QTextCursor::KeepAnchor,
+                                    numTrailing);
                 tmpCur.removeSelectedText();
             }
             block = block.next();
@@ -3099,7 +3107,8 @@ void FPwin::removeTrailingSpaces(TextEdit *textEdit)
 /*************************/
 void FPwin::appendEmptyLine(TextEdit *textEdit)
 {
-    if (textEdit->document()->lastBlock().text().isEmpty()) return;
+    if (textEdit->document()->lastBlock().text().isEmpty())
+        return;
 
     QTextCursor tmpCur = textEdit->textCursor();
     tmpCur.beginEditBlock();
@@ -3108,54 +3117,77 @@ void FPwin::appendEmptyLine(TextEdit *textEdit)
     tmpCur.endEditBlock();
 }
 /*************************/
-bool FPwin::writeToFile(QString& fname, TextEdit *textEdit, bool MSWinLineEnd)
+bool FPwin::writeToFile(QString &fname, TextEdit *textEdit, bool MSWinLineEnd)
 {
     QString encoding = checkToEncoding();
+
     QString contents = textEdit->document()->toPlainText();
-    QTextDocumentWriter writer(fname, "plaintext");
+
+    if (MSWinLineEnd) {
+    	contents.replace("\r\n", "\n");
+    	contents.replace("\n\r", "\n");
+    	contents.replace("\r", "\n");
+        contents.replace("\n", "\r\n");
+	}
 
     if (encoding == "UTF-16") {
-        contents.replace("\n", "\r\n");
-        return writeEncodedFile(fname, contents);
+        return writeEncodedFile(fname, contents, EncodingType::Utf16);
+    } else if (encoding == "ISO-8859-1") {
+        return writeEncodedFile(fname, contents, EncodingType::Iso88591);
     } else {
-        if (MSWinLineEnd) contents.replace("\n", "\r\n");
-        return writePlainFile(fname, contents);
+        return writeEncodedFile(fname, contents, EncodingType::Utf8);
     }
 }
 /*************************/
-bool FPwin::writeEncodedFile(QString& fname, const QString& contents)
+
+bool FPwin::writeEncodedFile(QString &fname, const QString &contents, EncodingType encType)
 {
     QFile file(fname);
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(contents.toUtf8());
-        file.close();
-        return true;
+    if (!file.open(QIODevice::WriteOnly)) {
+        return false;
     }
-    return false;
-}
-/*************************/
-bool FPwin::writePlainFile(QString& fname, const QString& contents)
-{
-    QFile file(fname);
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(contents.toUtf8());
-        file.close();
-        return true;
+
+    QTextStream out(&file);
+
+    switch (encType) {
+    case EncodingType::Utf16:
+    	out.setGenerateByteOrderMark(true);
+        out.setEncoding(QStringConverter::Utf16);
+        break;
+
+    case EncodingType::Iso88591:
+        out.setEncoding(QStringConverter::Latin1);
+        break;
+
+    case EncodingType::Utf8:
+    default:
+        out.setEncoding(QStringConverter::Utf8);
+        break;
     }
-    return false;
+
+    // Write the contents
+    out << contents;
+    out.flush();
+    file.close();
+
+    return true;
 }
 /*************************/
 void FPwin::updateFileProperties(QString& fname, TextEdit *textEdit)
 {
     QFileInfo fInfo(fname);
+
     textEdit->document()->setModified(false);
     textEdit->setFileName(fname);
     textEdit->setSize(fInfo.size());
     textEdit->setLastModified(fInfo.lastModified());
+
     ui->actionReload->setDisabled(false);
     setTitle(fname);
-    QString tip = fname.contains("/") ? fname.section("/", 0, -2) : fInfo.absolutePath();
+
+    QString tip = fInfo.absolutePath();
     QFontMetrics metrics(QToolTip::font());
+
     QString elidedTip = "<p style='white-space:pre'>" + metrics.elidedText(tip, Qt::ElideMiddle, 200 * metrics.horizontalAdvance(' ')) + "</p>";
     ui->tabWidget->setTabToolTip(ui->tabWidget->currentIndex(), elidedTip);
 }
@@ -3191,6 +3223,7 @@ bool FPwin::saveFile(bool keepSyntax, int first, int last, bool closingWindow,
     if (config.getRemoveTrailingSpaces()) removeTrailingSpaces(textEdit);
     if (config.getAppendEmptyLine()) appendEmptyLine(textEdit);
 
+	//TODO: saving with \r\n with MSWinLineEnd should be optional
     bool MSWinLineEnd = false;
     bool success = writeToFile(fname, textEdit, MSWinLineEnd);
 
@@ -3202,223 +3235,7 @@ bool FPwin::saveFile(bool keepSyntax, int first, int last, bool closingWindow,
 
     return success;
 }
-/*************************/
-// Here, "first" and "last" are as in closePages(). "curItem"/"curPage" is the
-// item/tab that should be made current in side-pane/tab-bar again, after saving
-// and closing. "MSWinLineEnd" shows whether MS Windows end-of-lines are used.
-void FPwin::saveAsRoot (const QString& fileName, TabPage *tabPage,
-                        int first, int last, bool closingWindow,
-                        QListWidgetItem *curItem, TabPage *curPage,
-                        bool MSWinLineEnd)
-{
-    QString temp = QStandardPaths::writableLocation (QStandardPaths::TempLocation);
-    if (temp.isEmpty()) return; // impossible
-    const QString curTime = QDateTime::currentDateTime().toString ("yyyyMMddhhmmsszzz");
-    QString fname = temp + "/" + "featherpad-" + curTime;
-    TextEdit *textEdit = tabPage->textEdit();
-    QTextDocumentWriter writer (fname, "plaintext");
-    bool success = false;
-    if (QObject::sender() == ui->actionSaveCodec)
-    {
-        QString encoding  = checkToEncoding();
-        if (encoding == "UTF-16")
-        {
-            QString contents = textEdit->document()->toPlainText();
-            contents.replace ("\n", "\r\n");
-            size_t ln = static_cast<size_t>(contents.length());
-            QStringEncoder encoder = getEncoder (encoding);
-            QByteArray encodedString = encoder.encode (contents);
-            const char *txt = encodedString.constData();
-            FILE *file;
-            file = fopen (fname.toUtf8().constData(), "wb");
-            if (file != nullptr)
-            {
-                fwrite (txt , 2 , ln + 1 , file);
-                fclose (file);
-                success = true;
-            }
-        }
-        else
-        {
-            if (MSWinLineEnd)
-            {
-                QString contents =textEdit->document()->toPlainText();
-                contents.replace ("\n", "\r\n");
-                QStringEncoder encoder = getEncoder (encoding);
-                QByteArray encodedString = encoder.encode (contents);
-                const char *txt = encodedString.constData();
-                std::ofstream file;
-                file.open (fname.toUtf8().constData());
-                if (file.is_open())
-                {
-                    file << txt;
-                    file.close();
-                    success = true;
-                }
-            }
-            else
-            {
-                QString contents = textEdit->document()->toPlainText();
-                QStringEncoder encoder = getEncoder (encoding);
-                QByteArray encodedString = encoder.encode (contents);
-                const char *txt = encodedString.constData();
-                std::ofstream file;
-                file.open (fname.toUtf8().constData());
-                if (file.is_open())
-                {
-                    file << txt;
-                    file.close();
-                    success = true;
-                }
-            }
-        }
-    }
-    else
-        encodingToCheck ("UTF-8");
-    if (!success)
-        success = writer.write (textEdit->document());
 
-    if (success)
-    { // use "pkexec" to copy the temporary file to the target file
-        showWarningBar ("<center><b><big>" + tr ("Saving as root.") + "</big></b></center>\n"
-                        + "<center><i>" + tr ("Waiting for authentication...") + "</i></center>",
-                        0);
-        lockWindow (tabPage, true); // wait until the following process is finished
-        QProcess *fileProcess = new QProcess (this);
-        connect (fileProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), textEdit,
-                 [=](int exitCode, QProcess::ExitStatus exitStatus) {
-            lockWindow (tabPage, false);
-            QFile::remove (fname);
-            if (exitStatus != QProcess::NormalExit || exitCode != 0)
-            {
-                lastWinFilesCur_.clear(); // wasn't cleared at closeEvent()
-                closePreviousPages_ = false;
-                fileProcess->setReadChannel (QProcess::StandardError);
-                QString error = fileProcess->readAllStandardError();
-                showWarningBar ("<center><b><big>" + tr ("Cannot be saved!") + "</big></b></center>\n"
-                                + "<center><i>" + error + "</i></center>",
-                                15);
-            }
-            else
-            {
-                closeWarningBar();
-                QFileInfo fInfo (fileName);
-                int tabIndex = ui->tabWidget->currentIndex();
-                /* because the closing range isn't necessarily about tab indexes,
-                   "index" will be set again below if the side pane is visible */
-                int index = tabIndex;
-
-                textEdit->document()->setModified (false);
-                textEdit->setFileName (fileName);
-                textEdit->setSize (fInfo.size());
-                textEdit->setLastModified (fInfo.lastModified());
-                ui->actionReload->setDisabled (false);
-                setTitle (fileName);
-                QString tip (fileName.contains ("/") ? fileName.section("/", 0, -2) : fInfo.absolutePath());
-                if (!tip.endsWith ("/")) tip += "/";
-                QFontMetrics metrics (QToolTip::font());
-                QString elidedTip = "<p style='white-space:pre'>"
-                                    + metrics.elidedText (tip, Qt::ElideMiddle, 200 * metrics.horizontalAdvance (' '))
-                                    + "</p>";
-                ui->tabWidget->setTabToolTip (tabIndex, elidedTip);
-                if (sidePane_ && !sideItems_.isEmpty())
-                {
-                    if (QListWidgetItem *wi = sideItems_.key (tabPage))
-                    {
-                        wi->setToolTip (elidedTip);
-                        index = sidePane_->listWidget()->row (wi);
-                    }
-                    else index = -1; // never happens
-                }
-                lastFile_ = fileName;
-                addRecentFile (lastFile_);
-
-                if (index > first && (index < last || last < 0))
-                {
-                    /* close this tab, as in closeTabAtIndex() */
-                    deleteTabPage (tabIndex,
-                                   closingWindow && (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES ? false : true),
-                                   !closingWindow);
-                    int count = ui->tabWidget->count();
-                    if (count == 0)
-                    {
-                        ui->actionReload->setDisabled (true);
-                        ui->actionSave->setDisabled (true);
-                        enableWidgets (false);
-                    }
-                    else
-                    {
-                        if (count == 1)
-                            updateGUIForSingleTab (true);
-
-                        /* restore the current page/item */
-                        if (curItem && sidePane_)
-                            sidePane_->listWidget()->setCurrentItem (curItem);
-                        else if (curPage && !sidePane_)
-                            ui->tabWidget->setCurrentWidget (curPage);
-
-                        if (TabPage *curTabPage = qobject_cast< TabPage *>(ui->tabWidget->currentWidget()))
-                            curTabPage->textEdit()->setFocus();
-                    }
-                    if (closingWindow) close();
-                    else
-                    {
-                        if (closePreviousPages_ && last < 0 && index == first + 1)
-                        { // continue closing previous pages
-                            closePreviousPages_ = false;
-                            closePages (-1, first);
-                        }
-                        else
-                            closePages (first, last - 1);
-                    }
-                }
-                else if (textEdit->getEncoding() != checkToEncoding())
-                { // correct the encoding
-                    lastWinFilesCur_.clear(); // just a precaution
-                    closePreviousPages_ = false;
-                    loadText (fileName, true, true,
-                              0, 0,
-                              textEdit->isUneditable(), false);
-                }
-                else
-                {
-                    /* the tab is neither closed not reloaded;
-                       update its highlighting if needed */
-                    lastWinFilesCur_.clear();
-                    closePreviousPages_ = false;
-                    reloadSyntaxHighlighter (textEdit);
-                }
-            }
-            fileProcess->deleteLater();
-        });
-
-        fileProcess->start ("pkexec", QStringList() << "--disable-internal-agent" << "cp" << fname << fileName);
-        if (!fileProcess->waitForStarted())
-        {
-            lockWindow (tabPage, false);
-            QFile::remove (fname);
-            lastWinFilesCur_.clear();
-            closePreviousPages_ = false;
-            showWarningBar ("<center><b><big>" + tr ("Cannot be saved!") + "</big></b></center>\n"
-                            + "<center><i>" + tr ("\"pkexec\" is not found. Please install Polkit!") + "</i></center>",
-                            15);
-            fileProcess->deleteLater();
-            return;
-        }
-    }
-    else
-    {
-        lastWinFilesCur_.clear();
-        closePreviousPages_ = false;
-        QString error = writer.device()->errorString();
-        showWarningBar ("<center><b><big>" + tr ("Cannot be saved!") + "</big></b></center>\n"
-                        + "<center><i>" + error + "</i></center>",
-                        15);
-    }
-
-    if (success && textEdit->isReadOnly() && !alreadyOpen (tabPage))
-         QTimer::singleShot (0, this, &FPwin::makeEditable);
-}
 /*************************/
 void FPwin::reloadSyntaxHighlighter (TextEdit *textEdit)
 { // uninstall and reinstall the syntax highlighter if the programming language is changed

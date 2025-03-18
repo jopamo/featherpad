@@ -214,6 +214,12 @@ private:
       DISCARDED
     };
 
+    enum class EncodingType {
+      Utf8,
+      Utf16,
+      Iso88591
+    };
+
     TabPage* createEmptyTab(bool setCurrent, bool allowNormalHighlighter = true);
     bool hasAnotherDialog();
     void deleteTabPage (int tabIndex, bool saveToList = false, bool closeWithLastTab = true);
@@ -232,16 +238,11 @@ private:
     void removeTrailingSpaces(TextEdit *textEdit);
     void appendEmptyLine(TextEdit *textEdit);
     bool writeToFile(QString& fname, TextEdit *textEdit, bool MSWinLineEnd);
-    bool writeEncodedFile(QString& fname, const QString& contents);
-    bool writePlainFile(QString& fname, const QString& contents);
+    bool writeEncodedFile(QString &fname, const QString& contents, EncodingType encType);
     void updateFileProperties(QString& fname, TextEdit *textEdit);
     bool saveFile (bool keepSyntax,
                    int first = 0, int last = 0, bool closingWindow = false,
                    QListWidgetItem *curItem = nullptr, TabPage *curPage = nullptr);
-    void saveAsRoot (const QString& fileName, TabPage *tabPage,
-                     int first, int last, bool closingWindow,
-                     QListWidgetItem *curItem, TabPage *curPage,
-                     bool MSWinLineEnd);
     void reloadSyntaxHighlighter (TextEdit *textEdit);
     void lockWindow (TabPage *tabPage, bool lock);
     void saveAllFiles (bool showWarning);
