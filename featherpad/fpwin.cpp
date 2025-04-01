@@ -1025,142 +1025,194 @@ bool FPwin::closePages(int first, int last, bool saveFilesList) {
 
     pauseAutoSaving(true);
 
-    bool hasSideList(sidePane_ && !sideItems_.isEmpty());
+    bool hasSideList = sidePane_ && sidePane_->listWidget() && !sideItems_.isEmpty();
     TabPage* curPage = nullptr;
     QListWidgetItem* curItem = nullptr;
+
     if (hasSideList) {
-        int cur = sidePane_->listWidget()->currentRow();
-        if (!(first < cur && (cur < last || last < 0)))
-            curItem = sidePane_->listWidget()->currentItem();
+        QListWidget* list = sidePane_->listWidget();
+        int cur = list->currentRow();
+        if (!(first < cur && (cur < last || last < 0))) {
+            curItem = list->currentItem();
+        }
     }
     else {
         int cur = ui->tabWidget->currentIndex();
-        if (!(first < cur && (cur < last || last < 0)))
+        if (!(first < cur && (cur < last || last < 0))) {
             curPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget());
+        }
     }
+
     bool keep = false;
-    int index, count;
+    int index = 0;
+    int count = 0;
     DOCSTATE state = SAVED;
-    bool closing(saveFilesList);  // saveFilesList is true only with closing
+    bool closing = saveFilesList;
+
     while (state == SAVED && ui->tabWidget->count() > 0) {
         makeBusy();
 
         if (last == 0)
-            break;                               // no tab on the left
-        if (last < 0)                            // close from the end
-            index = ui->tabWidget->count() - 1;  // the last tab/row
-        else                                     // if (last > 0)
+            break;
+
+        if (last < 0)
+            index = ui->tabWidget->count() - 1;
+        else
             index = last - 1;
 
         if (first >= index)
             break;
-        int tabIndex =
-            hasSideList ? ui->tabWidget->indexOf(sideItems_.value(sidePane_->listWidget()->item(index))) : index;
-        if (first == index - 1 && !closePreviousPages_)  // only one tab to be closed
-            state = savePrompt(tabIndex, false, first, last, closing);
-        else
-            state = savePrompt(tabIndex, true, first, last, closing);  // with a "No to all" button
+
+        int tabIndex = -1;
+        if (hasSideList) {
+            QListWidget* list = sidePane_->listWidget();
+            if (list && index >= 0 && index < list->count()) {
+                QListWidgetItem* item = list->item(index);
+                if (item)
+                    tabIndex = ui->tabWidget->indexOf(sideItems_.value(item, nullptr));
+            }
+        }
+        else {
+            tabIndex = index;
+        }
+
+        if (tabIndex < 0 || tabIndex >= ui->tabWidget->count())
+            break;
+
+        bool useNoToAll = !(first == index - 1 && !closePreviousPages_);
+        state = savePrompt(tabIndex, useNoToAll, first, last, closing);
+
         switch (state) {
-            case SAVED:  // close this tab and go to the next one on the left
+            case SAVED:
                 keep = false;
-                if (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES)  // never remember more than 50 files
+                if (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES)
                     saveFilesList = false;
                 deleteTabPage(tabIndex, saveFilesList, !closing);
 
-                if (last > -1)  // also last > 0
-                    --last;     // a left tab is removed
+                if (last > -1)
+                    --last;
 
-                /* final changes */
                 count = ui->tabWidget->count();
                 if (count == 0) {
                     ui->actionReload->setDisabled(true);
                     ui->actionSave->setDisabled(true);
                     enableWidgets(false);
                 }
-                else if (count == 1)
+                else if (count == 1) {
                     updateGUIForSingleTab(true);
+                }
                 break;
-            case UNDECIDED:  // stop quitting (cancel or can't save)
+
+            case UNDECIDED:
                 keep = true;
                 if (!locked_)
                     lastWinFilesCur_.clear();
                 break;
-            case DISCARDED:  // no to all: close all tabs (and, probably, quit)
+
+            case DISCARDED:
                 keep = false;
                 while (index > first) {
                     if (last == 0)
                         break;
+
                     if (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES)
                         saveFilesList = false;
-                    deleteTabPage(tabIndex, saveFilesList, !closing);
+
+                    if (tabIndex >= 0 && tabIndex < ui->tabWidget->count())
+                        deleteTabPage(tabIndex, saveFilesList, !closing);
 
                     if (last < 0)
                         index = ui->tabWidget->count() - 1;
-                    else  // if (last > 0)
-                    {
-                        --last;  // a left tab is removed
+                    else {
+                        --last;
                         index = last - 1;
                     }
-                    tabIndex = hasSideList
-                                   ? ui->tabWidget->indexOf(sideItems_.value(sidePane_->listWidget()->item(index)))
-                                   : index;
+
+                    tabIndex = -1;
+                    if (hasSideList) {
+                        QListWidget* list = sidePane_->listWidget();
+                        if (list && index >= 0 && index < list->count()) {
+                            QListWidgetItem* item = list->item(index);
+                            if (item)
+                                tabIndex = ui->tabWidget->indexOf(sideItems_.value(item, nullptr));
+                        }
+                    }
+                    else {
+                        tabIndex = index;
+                    }
                 }
+
                 count = ui->tabWidget->count();
                 if (count == 0) {
                     ui->actionReload->setDisabled(true);
                     ui->actionSave->setDisabled(true);
                     enableWidgets(false);
                 }
-                else if (count == 1)
+                else if (count == 1) {
                     updateGUIForSingleTab(true);
+                }
 
-                if (closePreviousPages_) {  // continue closing previous pages without prompt
+                if (closePreviousPages_) {
                     closePreviousPages_ = false;
                     if (first > 0) {
                         index = first - 1;
                         while (index > -1) {
-                            tabIndex =
-                                hasSideList
-                                    ? ui->tabWidget->indexOf(sideItems_.value(sidePane_->listWidget()->item(index)))
-                                    : index;
-                            if (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES)
-                                saveFilesList = false;
-                            deleteTabPage(tabIndex, saveFilesList, !closing);
+                            tabIndex = -1;
+                            if (hasSideList) {
+                                QListWidget* list = sidePane_->listWidget();
+                                if (list && index < list->count()) {
+                                    QListWidgetItem* item = list->item(index);
+                                    if (item)
+                                        tabIndex = ui->tabWidget->indexOf(sideItems_.value(item, nullptr));
+                                }
+                            }
+                            else {
+                                tabIndex = index;
+                            }
+
+                            if (tabIndex >= 0 && tabIndex < ui->tabWidget->count()) {
+                                if (lastWinFilesCur_.size() >= MAX_LAST_WIN_FILES)
+                                    saveFilesList = false;
+                                deleteTabPage(tabIndex, saveFilesList, !closing);
+                            }
                             --index;
                         }
+
                         count = ui->tabWidget->count();
-                        if (count == 0)  // impossible
-                        {
+                        if (count == 0) {
                             ui->actionReload->setDisabled(true);
                             ui->actionSave->setDisabled(true);
                             enableWidgets(false);
                         }
-                        else if (count == 1)  // always true
+                        else if (count == 1) {
                             updateGUIForSingleTab(true);
+                        }
                     }
                     unbusy();
                     pauseAutoSaving(false);
                     return false;
                 }
                 break;
+
             default:
                 break;
         }
     }
 
     unbusy();
-    if (!keep) {  // restore the current page/item
+    pauseAutoSaving(false);
+
+    if (!keep) {
         if (curPage)
             ui->tabWidget->setCurrentWidget(curPage);
-        else if (curItem)
+        else if (curItem && sidePane_ && sidePane_->listWidget())
             sidePane_->listWidget()->setCurrentItem(curItem);
-        if (closePreviousPages_) {  // continue closing previous pages
+
+        if (closePreviousPages_) {
             closePreviousPages_ = false;
             return closePages(-1, first);
         }
     }
-
-    pauseAutoSaving(false);
 
     return keep;
 }
@@ -1269,60 +1321,72 @@ FPwin::DOCSTATE FPwin::savePrompt(int tabIndex,
                                   QListWidgetItem* curItem,
                                   TabPage* curPage) {
     DOCSTATE state = SAVED;
-    TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(tabIndex));
-    if (tabPage == nullptr)
+
+    auto* tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(tabIndex));
+    if (!tabPage)
         return state;
+
     TextEdit* textEdit = tabPage->textEdit();
-    QString fname = textEdit->getFileName();
-    bool isRemoved(!fname.isEmpty() && !QFile::exists(fname));  // don't check QFileInfo (fname).isFile()
+    if (!textEdit)
+        return state;
+
+    const QString fname = textEdit->getFileName();
+    const bool isRemoved = (!fname.isEmpty() && !QFile::exists(fname));
+
     if (textEdit->document()->isModified() || isRemoved) {
-        unbusy();                  // made busy at closePages()
-        if (hasAnotherDialog()) {  // cancel
+        unbusy();  // made busy at closePages()
+
+        if (hasAnotherDialog()) {
             closePreviousPages_ = false;
             return UNDECIDED;
         }
 
-        if (tabIndex != ui->tabWidget->currentIndex()) {  // switch to the page that needs attention
-            if (sidePane_ && !sideItems_.isEmpty())
-                sidePane_->listWidget()->setCurrentItem(
-                    sideItems_.key(tabPage));  // sets the current widget at changeTab()
-            else
+        // Ensure the tab needing attention is shown
+        if (tabIndex != ui->tabWidget->currentIndex()) {
+            if (sidePane_ && !sideItems_.isEmpty()) {
+                auto* item = sideItems_.key(tabPage);
+                if (item)
+                    sidePane_->listWidget()->setCurrentItem(item);
+            }
+            else {
                 ui->tabWidget->setCurrentIndex(tabIndex);
+            }
         }
 
         updateShortcuts(true);
 
+        // Construct message box
         MessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Question);
-        msgBox.setText("<center><b><big>" + tr("Save changes?") + "</big></b></center>");
-        if (isRemoved)
-            msgBox.setInformativeText("<center><i>" + tr("The file does not exist.") + "</i></center>");
-        else
-            msgBox.setInformativeText("<center><i>" + tr("The document has been modified.") + "</i></center>");
+        msgBox.setText(QStringLiteral("<center><b><big>%1</big></b></center>").arg(tr("Save changes?")));
+
+        msgBox.setInformativeText(
+            QStringLiteral("<center><i>%1</i></center>")
+                .arg(isRemoved ? tr("The file does not exist.") : tr("The document has been modified.")));
+
+        auto buttons = QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel;
         if (noToAll && ui->tabWidget->count() > 1)
-            msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel |
-                                      QMessageBox::NoToAll);
-        else
-            msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+            buttons |= QMessageBox::NoToAll;
+
+        msgBox.setStandardButtons(buttons);
         msgBox.changeButtonText(QMessageBox::Save, tr("&Save"));
         msgBox.changeButtonText(QMessageBox::Discard, tr("&Discard changes"));
         msgBox.changeButtonText(QMessageBox::Cancel, tr("&Cancel"));
-        if (noToAll)
+
+        if (buttons & QMessageBox::NoToAll)
             msgBox.changeButtonText(QMessageBox::NoToAll, tr("&No to all"));
+
         msgBox.setDefaultButton(QMessageBox::Save);
         msgBox.setWindowModality(Qt::WindowModal);
-        /* enforce a central position */
-        /*msgBox.show();
-        msgBox.move (x() + width()/2 - msgBox.width()/2,
-                     y() + height()/2 - msgBox.height()/ 2);*/
+
         switch (msgBox.exec()) {
             case QMessageBox::Save:
                 if (!saveFile(true, first, last, closingWindow, curItem, curPage)) {
-                    state = UNDECIDED;
-                    /* NOTE: closePreviousPages_ is set to false by saveFile() */
+                    state = UNDECIDED;  // closePreviousPages_ is set to false by saveFile()
                 }
                 break;
             case QMessageBox::Discard:
+                state = DISCARDED;
                 break;
             case QMessageBox::Cancel:
                 state = UNDECIDED;
@@ -1338,6 +1402,7 @@ FPwin::DOCSTATE FPwin::savePrompt(int tabIndex,
 
         updateShortcuts(false);
     }
+
     return state;
 }
 /*************************/
@@ -2007,30 +2072,40 @@ void FPwin::closePage() {
 }
 /*************************/
 void FPwin::closeTabAtIndex(int tabIndex) {
+    if (!ui || !ui->tabWidget || tabIndex < 0 || tabIndex >= ui->tabWidget->count())
+        return;
+
     pauseAutoSaving(true);
 
     TabPage* curPage = nullptr;
     QListWidgetItem* curItem = nullptr;
+
     if (tabIndex != ui->tabWidget->currentIndex()) {
-        if (sidePane_)
+        if (sidePane_ && sidePane_->listWidget())
             curItem = sidePane_->listWidget()->currentItem();
         else
             curPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget());
     }
-    int index = tabIndex;  // may need to be converted to the side-pane row
-    if (sidePane_ && !sideItems_.isEmpty()) {
-        if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(tabIndex))) {
-            if (QListWidgetItem* wi = sideItems_.key(tabPage))
-                index = sidePane_->listWidget()->row(wi);
+
+    int index = tabIndex;
+
+    if (sidePane_ && sidePane_->listWidget() && !sideItems_.isEmpty()) {
+        QWidget* widget = ui->tabWidget->widget(tabIndex);
+        if (auto* tabPage = qobject_cast<TabPage*>(widget)) {
+            QListWidgetItem* item = sideItems_.key(tabPage, nullptr);
+            if (item)
+                index = sidePane_->listWidget()->row(item);
         }
     }
+
     if (savePrompt(tabIndex, false, index - 1, index + 1, false, curItem, curPage) != SAVED) {
         pauseAutoSaving(false);
         return;
     }
-    closeWarningBar();
 
+    closeWarningBar();
     deleteTabPage(tabIndex);
+
     int count = ui->tabWidget->count();
     if (count == 0) {
         ui->actionReload->setDisabled(true);
@@ -2041,14 +2116,17 @@ void FPwin::closeTabAtIndex(int tabIndex) {
         if (count == 1)
             updateGUIForSingleTab(true);
 
-        /* restore the current page/item */
+        // restore the current page/item
         if (curPage)
             ui->tabWidget->setCurrentWidget(curPage);
-        else if (curItem)
+        else if (curItem && sidePane_ && sidePane_->listWidget())
             sidePane_->listWidget()->setCurrentItem(curItem);
 
-        if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
-            tabPage->textEdit()->setFocus();
+        QWidget* current = ui->tabWidget->currentWidget();
+        if (auto* tabPage = qobject_cast<TabPage*>(current)) {
+            if (auto edit = tabPage->textEdit())
+                edit->setFocus();
+        }
     }
 
     pauseAutoSaving(false);
