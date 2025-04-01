@@ -58,6 +58,8 @@ class TextEdit : public QPlainTextEdit {
 
     void rmDupeSort(bool reverse = false);
 
+    void spaceDupeSort(bool reverse = false);
+
     bool toSoftTabs();
 
     QString getUrl(const int pos) const;

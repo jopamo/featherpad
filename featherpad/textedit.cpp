@@ -2160,6 +2160,47 @@ void TextEdit::rmDupeSort(bool reverse) {
     cursor.endEditBlock();
 }
 
+void TextEdit::spaceDupeSort(bool reverse) {
+    if (isReadOnly())
+        return;
+
+    QTextCursor cursor = textCursor();
+
+    if (cursor.anchor() == cursor.position())
+        return;
+
+    cursor.beginEditBlock();
+
+    QString rawSelection = cursor.selectedText();
+
+    cursor.removeSelectedText();
+
+    rawSelection.replace(QChar(QChar::ParagraphSeparator), QLatin1Char(' '));
+    rawSelection.replace(QChar::CarriageReturn, QLatin1Char(' '));
+    rawSelection.replace(QChar::LineFeed, QLatin1Char(' '));
+
+    QStringList tokens = rawSelection.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
+    QSet<QString> uniqueSet;
+    for (const QString& tk : tokens) {
+        uniqueSet.insert(tk);
+    }
+    tokens = QStringList(uniqueSet.cbegin(), uniqueSet.cend());
+
+    std::sort(tokens.begin(), tokens.end(),
+              [](const QString& a, const QString& b) { return QString::localeAwareCompare(a, b) < 0; });
+
+    if (reverse) {
+        std::reverse(tokens.begin(), tokens.end());
+    }
+
+    QString singleLine = tokens.join(QLatin1Char(' '));
+
+    cursor.insertText(singleLine);
+
+    cursor.endEditBlock();
+}
+
 /************************************************************
 ***** The following functions are mainly for hyperlinks *****
 *************************************************************/

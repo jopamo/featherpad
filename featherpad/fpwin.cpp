@@ -34,25 +34,30 @@
 #include "menubartitle.h"
 #include "svgicons.h"
 
+#include <algorithm>
+#include <fstream>
+#include <QClipboard>
+#include <QCollator>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDesktopServices>
+#include <QFileInfo>
 #include <QMimeDatabase>
 #include <QPrintDialog>
-#include <QToolTip>
-#include <QScreen>
-#include <QWindow>
-#include <QScrollBar>
-#include <QWidgetAction>
-#include <fstream>  // std::ofstream
 #include <QPrinter>
-#include <QClipboard>
 #include <QProcess>
-#include <QTextDocumentWriter>
-#include <QFileInfo>
-#include <QStandardPaths>
-#include <QDesktopServices>
 #include <QPushButton>
-#include <QDBusConnection>  // for opening containing folder
-#include <QDBusMessage>     // for opening containing folder
+#include <QRegularExpression>
+#include <QScreen>
+#include <QScrollBar>
+#include <QSet>
+#include <QStandardPaths>
 #include <QStringDecoder>
+#include <QTextCursor>
+#include <QTextDocumentWriter>
+#include <QToolTip>
+#include <QWidgetAction>
+#include <QWindow>
 
 #ifdef HAS_X11
 #include "x11.h"
@@ -208,6 +213,9 @@ FPwin::FPwin(QWidget* parent) : QMainWindow(parent), dummyWidget(nullptr), ui(ne
 
     connect(ui->ActionRmDupeSort, &QAction::triggered, this, &FPwin::rmDupeSort);
     connect(ui->ActionRmDupeRSort, &QAction::triggered, this, &FPwin::rmDupeSort);
+
+    connect(ui->ActionSpaceDupeSort, &QAction::triggered, this, &FPwin::spaceDupeSort);
+    connect(ui->ActionSpaceDupeRSort, &QAction::triggered, this, &FPwin::spaceDupeSort);
 
     connect(ui->actionEdit, &QAction::triggered, this, &FPwin::makeEditable);
 
@@ -1743,10 +1751,14 @@ void FPwin::editorContextMenu(const QPoint& p) {
                 ui->actionRSortLines->setEnabled(true);
                 ui->ActionRmDupeSort->setEnabled(true);
                 ui->ActionRmDupeRSort->setEnabled(true);
+                ui->ActionSpaceDupeSort->setEnabled(true);
+                ui->ActionSpaceDupeRSort->setEnabled(true);
                 menu->addAction(ui->actionSortLines);
                 menu->addAction(ui->actionRSortLines);
                 menu->addAction(ui->ActionRmDupeSort);
                 menu->addAction(ui->ActionRmDupeRSort);
+                menu->addAction(ui->ActionSpaceDupeSort);
+                menu->addAction(ui->ActionSpaceDupeRSort);
             }
             menu->addSeparator();
         }
@@ -3289,6 +3301,8 @@ void FPwin::showingEditMenu() {
                 ui->actionRSortLines->setEnabled(true);
                 ui->ActionRmDupeSort->setEnabled(true);
                 ui->ActionRmDupeRSort->setEnabled(true);
+                ui->ActionSpaceDupeSort->setEnabled(true);
+                ui->ActionSpaceDupeRSort->setEnabled(true);
                 return;
             }
         }
@@ -3301,6 +3315,8 @@ void FPwin::showingEditMenu() {
     ui->actionRSortLines->setEnabled(false);
     ui->ActionRmDupeSort->setEnabled(false);
     ui->ActionRmDupeRSort->setEnabled(false);
+    ui->ActionSpaceDupeSort->setEnabled(false);
+    ui->ActionSpaceDupeRSort->setEnabled(false);
 }
 /*************************/
 void FPwin::hidngEditMenu() {
@@ -3320,6 +3336,11 @@ void FPwin::sortLines() {
 void FPwin::rmDupeSort() {
     if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
         tabPage->textEdit()->rmDupeSort(qobject_cast<QAction*>(QObject::sender()) == ui->ActionRmDupeRSort);
+}
+
+void FPwin::spaceDupeSort() {
+    if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
+        tabPage->textEdit()->spaceDupeSort(qobject_cast<QAction*>(QObject::sender()) == ui->ActionSpaceDupeRSort);
 }
 
 /*************************/

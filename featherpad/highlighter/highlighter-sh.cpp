@@ -411,8 +411,6 @@ bool Highlighter::handleCloseParenthesis(int& currentIndex,
             --nestCount;
             // Refresh states
             initialOpenNests = nestCount;
-            // Re-check if we remain double-quoted
-            bool stillDoubleQuoted = quotes.contains(nestCount);
             parenDepth = 0;  // reset
             ++currentIndex;
             return true;

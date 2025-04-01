@@ -120,6 +120,7 @@ class FPwin : public QMainWindow {
     void hidngEditMenu();
     void sortLines();
     void rmDupeSort();
+    void spaceDupeSort();
     void makeEditable();
     void undoing();
     void redoing();
