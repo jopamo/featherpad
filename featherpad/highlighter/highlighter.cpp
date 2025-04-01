@@ -4720,8 +4720,8 @@ bool Highlighter::isHereDocument(const QString& text) {
                             state > 0 ? state += 2 : state -= 2;
                         }
                         if (prevState == doubleQuoteState ||
-                            prevState == SH_DoubleQuoteState) {  // to know whether a double quote is added/removed
-                                                                 // before "$(" in a previous line
+                            prevState == SH_DoubleQuoteState) {   // to know whether a double quote is added/removed
+                                                                  // before "$(" in a previous line
                             state > 0 ? state += 4 : state -= 4;  // not 2 -> not to be canceled above
                         }
                     }

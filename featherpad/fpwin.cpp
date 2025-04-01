@@ -1769,46 +1769,20 @@ void FPwin::zoomZero() {
 }
 /*************************/
 void FPwin::defaultSize() {
+    // Get default start size from config
     QSize s = static_cast<FPsingleton*>(qApp)->getConfig().getStartSize();
+
+    // If we’re already at that size, do nothing
     if (size() == s)
         return;
+
+    // If maximized or fullscreen, return to normal first
     if (isMaximized() || isFullScreen())
         showNormal();
-    /*if (isMaximized() && isFullScreen())
-        showMaximized();
-    if (isMaximized())
-        showNormal();*/
-    /* instead of hiding, reparent with the dummy
-       widget to guarantee resizing under all DEs */
-    /*Qt::WindowFlags flags = windowFlags();
-    setParent (dummyWidget, Qt::SubWindow);*/
-    // hide();
-    resize(s);
-    /*if (parent() != nullptr)
-        setParent (nullptr, flags);*/
-    // QTimer::singleShot (0, this, &FPwin::show);
-}
-/*************************/
-/*void FPwin::align()
-{
-    int index = ui->tabWidget->currentIndex();
-    if (index == -1) return;
 
-    TextEdit *textEdit = qobject_cast< TabPage *>(ui->tabWidget->widget (index))->textEdit();
-    QTextOption opt = textEdit->document()->defaultTextOption();
-    if (opt.alignment() == (Qt::AlignLeft))
-    {
-        opt = QTextOption (Qt::AlignRight);
-        opt.setTextDirection (Qt::LayoutDirectionAuto);
-        textEdit->document()->setDefaultTextOption (opt);
-    }
-    else if (opt.alignment() == (Qt::AlignRight))
-    {
-        opt = QTextOption (Qt::AlignLeft);
-        opt.setTextDirection (Qt::LayoutDirectionAuto);
-        textEdit->document()->setDefaultTextOption (opt);
-    }
-}*/
+    // Finally resize to the target size
+    resize(s);
+}
 /*************************/
 void FPwin::focusView() {
     if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
@@ -2207,7 +2181,6 @@ void FPwin::loadText(const QString& fileName,
     updateShortcuts(true, false);
 }
 /*************************/
-// When multiple files are being loaded, we don't change the current tab.
 void FPwin::addText(const QString& text,
                     const QString& fileName,
                     const QString& charset,
@@ -2218,13 +2191,21 @@ void FPwin::addText(const QString& text,
                     bool uneditable,
                     bool multiple) {
     if (fileName.isEmpty() || charset.isEmpty()) {
-        if (!fileName.isEmpty() && charset.isEmpty())  // means a very large file
+        // large file => empty charset
+        if (!fileName.isEmpty() && charset.isEmpty()) {
             connect(this, &FPwin::finishedLoading, this, &FPwin::onOpeningHugeFiles, Qt::UniqueConnection);
-        else if (fileName.isEmpty() && !charset.isEmpty())  // means a non-text file that shouldn't be opened
+        }
+        // non-text file => empty fileName
+        else if (fileName.isEmpty() && !charset.isEmpty()) {
             connect(this, &FPwin::finishedLoading, this, &FPwin::onOpeninNonTextFiles, Qt::UniqueConnection);
-        else
+        }
+        // fallback => likely permission issue or something else
+        else {
             connect(this, &FPwin::finishedLoading, this, &FPwin::onPermissionDenied, Qt::UniqueConnection);
-        --loadingProcesses_;  // can never become negative
+        }
+
+        // Decrement loading and finish if no more loading is pending
+        --loadingProcesses_;  // will not go below 0
         if (!isLoading()) {
             ui->tabWidget->tabBar()->lockTabs(false);
             updateShortcuts(false, false);
@@ -2236,24 +2217,29 @@ void FPwin::addText(const QString& text,
         return;
     }
 
+    // If encoding is enforced or reloading, do not open in multiple mode
     if (enforceEncod || reload)
-        multiple = false;  // respect the logic
+        multiple = false;
 
-    /* only for the side-pane mode */
     static bool scrollToFirstItem(false);
     static QListWidgetItem* firstItem = nullptr;
 
-    TextEdit* textEdit;
     TabPage* tabPage = nullptr;
-    if (ui->tabWidget->currentIndex() == -1)
+    if (ui->tabWidget->currentIndex() == -1) {
+        // If no tab is open at all, create a new one
         tabPage = createEmptyTab(!multiple, false);
-    else
+    }
+    else {
+        // Otherwise use the current tab (for now)
         tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget());
-    if (tabPage == nullptr)
+    }
+    if (!tabPage)
         return;
-    textEdit = tabPage->textEdit();
 
-    bool openInCurrentTab(true);
+    TextEdit* textEdit = tabPage->textEdit();
+    bool openInCurrentTab = true;
+
+    // if the current tab is not empty or is modified, create a new tab
     if (!reload && !enforceEncod &&
         (!textEdit->document()->isEmpty() || textEdit->document()->isModified() ||
          !textEdit->getFileName().isEmpty())) {
@@ -2261,93 +2247,73 @@ void FPwin::addText(const QString& text,
         textEdit = tabPage->textEdit();
         openInCurrentTab = false;
     }
-    else {
-        if (sidePane_ && !reload && !enforceEncod)  // an unused empty tab
-            scrollToFirstItem = true;
+    else if (sidePane_ && !reload && !enforceEncod) {
+        // side-pane, fresh empty tab
+        scrollToFirstItem = true;
     }
+
+    // Decide whether to restore cursor position
     textEdit->setSaveCursor(restoreCursor == 1);
+    textEdit->setLang(QString());  // remove enforced syntax
 
-    textEdit->setLang(QString());  // remove the enforced syntax
-
-    /* for restoring the cursor and/or scrollbar position later,
-       the needed info should be gathered before removing the highlighter */
+    // For reloading: remember current scrollbar, etc., then remove highlight
     TextEdit::viewPosition vPos;
     if (reload) {
         textEdit->forgetTxtCurHPos();
         vPos = textEdit->getViewPosition();
     }
-
-    /* uninstall the syntax highlighter to reinstall it below (when the text is reloaded,
-       its encoding is enforced, or a new tab with normal as url was opened here) */
     if (textEdit->getHighlighter()) {
-        textEdit->setGreenSel(QList<QTextEdit::ExtraSelection>());  // they'll have no meaning later
-        syntaxHighlighting(textEdit, false);
+        textEdit->setGreenSel(QList<QTextEdit::ExtraSelection>());
+        syntaxHighlighting(textEdit, false);  // turn off old highlight
     }
 
     QFileInfo fInfo(fileName);
-
-    /* this workaround, for the RTL bug in QPlainTextEdit, isn't needed
-       because a better workaround is included in textedit.cpp */
-    /*QTextOption opt = textEdit->document()->defaultTextOption();
-    if (text.isRightToLeft())
-    {
-        if (opt.alignment() == (Qt::AlignLeft))
-        {
-            opt = QTextOption (Qt::AlignRight);
-            opt.setTextDirection (Qt::LayoutDirectionAuto);
-            textEdit->document()->setDefaultTextOption (opt);
-        }
-    }
-    else if (opt.alignment() == (Qt::AlignRight))
-    {
-        opt = QTextOption (Qt::AlignLeft);
-        opt.setTextDirection (Qt::LayoutDirectionAuto);
-        textEdit->document()->setDefaultTextOption (opt);
-    }*/
-
     Config& config = static_cast<FPsingleton*>(qApp)->getConfig();
 
-    /* set the text */
-    inactiveTabModified_ = true;   // ignore QTextDocument::modificationChanged() temporarily
-    textEdit->setPlainText(text);  // undo/redo is reset
+    // Temporarily ignore modChanged signals while setting text
+    inactiveTabModified_ = true;
+    textEdit->setPlainText(text);
     inactiveTabModified_ = false;
 
     if (!reload && restoreCursor != 0) {
-        if (restoreCursor == 1 || restoreCursor == -1)  // restore cursor from settings
-        {
+        if (restoreCursor == 1 || restoreCursor == -1) {
+            // Possibly restore from saved positions
             QHash<QString, QVariant> cursorPos =
-                restoreCursor == 1 ? config.savedCursorPos() : config.getLastFilesCursorPos();
+                (restoreCursor == 1) ? config.savedCursorPos() : config.getLastFilesCursorPos();
             if (cursorPos.contains(fileName)) {
                 QTextCursor cur = textEdit->textCursor();
-                cur.movePosition(QTextCursor::End);
-                int pos = std::min(std::max(cursorPos.value(fileName, 0).toInt(), 0), cur.position());
+                cur.movePosition(QTextCursor::End);  // clamp to doc end
+                int pos = std::max(0, cursorPos.value(fileName, 0).toInt());
+                pos = std::min(pos, cur.position());
                 cur.setPosition(pos);
-                QTimer::singleShot(0, textEdit, [textEdit, cur]() {
-                    textEdit->setTextCursor(cur);  // ensureCursorVisible() is called by this
-                });
+                QTimer::singleShot(0, textEdit, [textEdit, cur]() { textEdit->setTextCursor(cur); });
             }
         }
-        else if (restoreCursor < -1)  // doc end in commandline
-        {
+        else if (restoreCursor < -1) {
+            // Means user wants to go to doc end from command line
             QTextCursor cur = textEdit->textCursor();
             cur.movePosition(QTextCursor::End);
             QTimer::singleShot(0, textEdit, [textEdit, cur]() { textEdit->setTextCursor(cur); });
         }
-        else  // if (restoreCursor >= 2) // cursor position in commandline (2 means the first line)
+        else  // (restoreCursor >= 2) => specific line
         {
-            restoreCursor -= 2;  // in Qt, blocks are started from 0
-            if (restoreCursor < textEdit->document()->blockCount()) {
-                QTextBlock block = textEdit->document()->findBlockByNumber(restoreCursor);
+            int lineNumber = restoreCursor - 2;
+            QTextDocument* doc = textEdit->document();
+            if (lineNumber < doc->blockCount()) {
+                QTextBlock block = doc->findBlockByNumber(lineNumber);
                 QTextCursor cur(block);
+                // clamp position if posInLine is out of range
                 QTextCursor tmp = cur;
                 tmp.movePosition(QTextCursor::EndOfBlock);
                 if (posInLine < 0 || posInLine >= tmp.positionInBlock())
                     cur = tmp;
                 else
                     cur.setPosition(block.position() + posInLine);
+
                 QTimer::singleShot(0, textEdit, [textEdit, cur]() { textEdit->setTextCursor(cur); });
             }
             else {
+                // If requested line is beyond EOF, go to doc end
                 QTextCursor cur = textEdit->textCursor();
                 cur.movePosition(QTextCursor::End);
                 QTimer::singleShot(0, textEdit, [textEdit, cur]() { textEdit->setTextCursor(cur); });
@@ -2361,36 +2327,39 @@ void FPwin::addText(const QString& text,
     lastFile_ = fileName;
     if (config.getRecentOpened())
         addRecentFile(lastFile_);
+
     textEdit->setEncoding(charset);
     textEdit->setWordNumber(-1);
+
     if (uneditable) {
         textEdit->makeUneditable(true);
-        if (!reload)  // with reloading, this connection will be made later
+        if (!reload)  // if reloading, the connection is made later
             connect(this, &FPwin::finishedLoading, this, &FPwin::onOpeningUneditable, Qt::UniqueConnection);
     }
+
+    // Language recognition, highlight, and tab title
     setProgLang(textEdit);
     if (ui->actionSyntax->isChecked())
         syntaxHighlighting(textEdit);
-    setTitle(fileName, (multiple && !openInCurrentTab)
-                           ?
-                           /* An Old comment not valid anymore: "The index may have changed because syntaxHighlighting()
-                              waits for all events to be processed (but it won't change from here on)." */
-                           ui->tabWidget->indexOf(tabPage)
-                           : -1);
-    QString tip(fileName.contains("/") ? fileName.section("/", 0, -2) : fInfo.absolutePath());
-    if (!tip.endsWith("/"))
-        tip += "/";
-    QFontMetrics metrics(QToolTip::font());
-    QString elidedTip = "<p style='white-space:pre'>" +
-                        metrics.elidedText(tip, Qt::ElideMiddle, 200 * metrics.horizontalAdvance(' ')) + "</p>";
+
+    int indexOfTab = (multiple && !openInCurrentTab) ? ui->tabWidget->indexOf(tabPage) : -1;
+    setTitle(fileName, indexOfTab);
+
+    // Set tab tooltips
+    QString parentPath = fileName.contains('/') ? fileName.section('/', 0, -2) : fInfo.absolutePath();
+    if (!parentPath.endsWith('/'))
+        parentPath += '/';
+    QFontMetrics fm(QToolTip::font());
+
+    QString elidedTip = QString("<p style='white-space:pre'>%1</p>")
+                            .arg(fm.elidedText(parentPath, Qt::ElideMiddle, 200 * fm.horizontalAdvance(' ')));
     ui->tabWidget->setTabToolTip(ui->tabWidget->indexOf(tabPage), elidedTip);
+
     if (!sideItems_.isEmpty()) {
         if (QListWidgetItem* wi = sideItems_.key(tabPage)) {
             wi->setToolTip(elidedTip);
             if (scrollToFirstItem &&
-                (!firstItem
-                 /* consult the natural sorting of ListWidgetItem */
-                 || *(static_cast<ListWidgetItem*>(wi)) < *(static_cast<ListWidgetItem*>(firstItem)))) {
+                (!firstItem || *(static_cast<ListWidgetItem*>(wi)) < *(static_cast<ListWidgetItem*>(firstItem)))) {
                 firstItem = wi;
             }
         }
@@ -2398,33 +2367,28 @@ void FPwin::addText(const QString& text,
 
     if (uneditable || alreadyOpen(tabPage)) {
         textEdit->setReadOnly(true);
+
         if (!textEdit->hasDarkScheme()) {
-            if (uneditable)  // as with Help
-                textEdit->viewport()->setStyleSheet(
-                    ".QWidget {"
-                    "color: black;"
-                    "background-color: rgb(225, 238, 255);}");
-            else
-                textEdit->viewport()->setStyleSheet(
-                    ".QWidget {"
-                    "color: black;"
-                    "background-color: rgb(236, 236, 208);}");
+            if (uneditable) {
+                textEdit->viewport()->setStyleSheet(".QWidget { color: black; background-color: rgb(225,238,255); }");
+            }
+            else {
+                textEdit->viewport()->setStyleSheet(".QWidget { color: black; background-color: rgb(236,236,208); }");
+            }
         }
         else {
-            if (uneditable)
-                textEdit->viewport()->setStyleSheet(
-                    ".QWidget {"
-                    "color: white;"
-                    "background-color: rgb(0, 60, 110);}");
-            else
-                textEdit->viewport()->setStyleSheet(
-                    ".QWidget {"
-                    "color: white;"
-                    "background-color: rgb(60, 0, 0);}");
+            if (uneditable) {
+                textEdit->viewport()->setStyleSheet(".QWidget { color: white; background-color: rgb(0,60,110); }");
+            }
+            else {
+                textEdit->viewport()->setStyleSheet(".QWidget { color: white; background-color: rgb(60,0,0); }");
+            }
         }
+
         if (!multiple || openInCurrentTab) {
-            if (!uneditable)
+            if (!uneditable) {
                 ui->actionEdit->setVisible(true);
+            }
             else {
                 ui->actionSaveAs->setDisabled(true);
                 ui->actionSaveCodec->setDisabled(true);
@@ -2440,18 +2404,21 @@ void FPwin::addText(const QString& text,
             if (config.getSaveUnmodified())
                 ui->actionSave->setDisabled(true);
         }
+
         disconnect(textEdit, &TextEdit::canCopy, ui->actionCut, &QAction::setEnabled);
         disconnect(textEdit, &TextEdit::canCopy, ui->actionDelete, &QAction::setEnabled);
         disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionUpperCase, &QAction::setEnabled);
         disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionLowerCase, &QAction::setEnabled);
         disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionStartCase, &QAction::setEnabled);
     }
-    else if (textEdit->isReadOnly())
+    else if (textEdit->isReadOnly()) {
         QTimer::singleShot(0, this, &FPwin::makeEditable);
+    }
 
     if (!multiple || openInCurrentTab) {
-        if (!fInfo.exists())  // tabSwitch() may be called before this function
+        if (!fInfo.exists())
             connect(this, &FPwin::finishedLoading, this, &FPwin::onOpeningNonexistent, Qt::UniqueConnection);
+
         if (ui->statusBar->isVisible()) {
             statusMsgWithLineCount(textEdit->document()->blockCount());
             if (QToolButton* wordButton = ui->statusBar->findChild<QToolButton*>("wordButton"))
@@ -2459,50 +2426,50 @@ void FPwin::addText(const QString& text,
             if (text.isEmpty())
                 updateWordInfo();
         }
+
         if (config.getShowLangSelector() && config.getSyntaxByDefault())
             updateLangBtn(textEdit);
+
         encodingToCheck(charset);
         ui->actionReload->setEnabled(true);
-        textEdit->setFocus();  // the text may have been opened in this (empty) tab
 
-        if (openInCurrentTab) {
-            if (isScriptLang(textEdit->getProg()) && fInfo.isExecutable())
-                ui->actionRun->setVisible(config.getExecuteScripts());
-            else
-                ui->actionRun->setVisible(false);
-        }
+        textEdit->setFocus();
+
+        if (isScriptLang(textEdit->getProg()) && fInfo.isExecutable())
+            ui->actionRun->setVisible(config.getExecuteScripts());
+        else
+            ui->actionRun->setVisible(false);
     }
 
-    /* a file is completely loaded */
     --loadingProcesses_;
     if (!isLoading()) {
         ui->tabWidget->tabBar()->lockTabs(false);
         updateShortcuts(false, false);
+
         if (reload) {
-            /* restore the cursor and/or scrollbar position */
             lambdaConnection_ = QObject::connect(this, &FPwin::finishedLoading, textEdit, [this, textEdit, vPos]() {
-                QTimer::singleShot(0, textEdit, [textEdit, vPos] { textEdit->setViewPostion(vPos); });
+                QTimer::singleShot(0, textEdit, [textEdit, vPos]() { textEdit->setViewPostion(vPos); });
                 disconnectLambda();
             });
-            if (uneditable)  // should come after the lambda connection; see onOpeningUneditable()
+            if (uneditable) {
                 connect(this, &FPwin::finishedLoading, this, &FPwin::onOpeningUneditable, Qt::UniqueConnection);
+            }
         }
-        /* select the first item (sidePane_ exists) */
-        else if (firstItem)
+        else if (firstItem) {
             sidePane_->listWidget()->setCurrentItem(firstItem);
+        }
 
-        /* reset the static variables */
         scrollToFirstItem = false;
         firstItem = nullptr;
 
-        closeWarningBar(true);  // here the closing animation won't be interrupted
+        closeWarningBar(true);
         emit finishedLoading();
-        /* remove the busy cursor only after all events are processed
-           (e.g., highlighting the syntax of a huge text may take a while) */
+
         QTimer::singleShot(0, this, &FPwin::unbusy);
         stealFocus();
     }
 }
+
 /*************************/
 void FPwin::disconnectLambda() {
     QObject::disconnect(lambdaConnection_);
