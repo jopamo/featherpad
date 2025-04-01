@@ -1,47 +1,32 @@
-/*
- * Copyright (C) Pedram Pourang (aka Tsu Jan) 2014-2023 <tsujan2000@gmail.com>
- *
- * FeatherPad is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * FeatherPad is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * @license GPL-3.0+ <https://spdx.org/licenses/GPL-3.0+.html>
- */
-
 #ifndef HIGHLIGHTER_H
 #define HIGHLIGHTER_H
 
 #include <QSyntaxHighlighter>
 #include <QRegularExpression>
+#include <QSet>
+#include <QList>
+#include <QHash>
+#include <QColor>
+#include <QTextBlockUserData>
+#include <QTextCursor>
 
 namespace FeatherPad {
 
 struct ParenthesisInfo {
-    char character;  // '(' or ')'
+    char character;
     int position;
 };
 
 struct BraceInfo {
-    char character;  // '{' or '}'
+    char character;
     int position;
 };
 
 struct BracketInfo {
-    char character;  // '[' or ']'
+    char character;
     int position;
 };
 
-/* This class gathers all the information needed for
-   highlighting the syntax of the current block. */
 class TextBlockData : public QTextBlockUserData {
    public:
     TextBlockData()
@@ -81,21 +66,16 @@ class TextBlockData : public QTextBlockUserData {
     QList<ParenthesisInfo*> allParentheses;
     QList<BraceInfo*> allBraces;
     QList<BracketInfo*> allBrackets;
-    QString label;     // A label (can be a delimiter string, like that of a here-doc).
-    bool Highlighted;  // Is this block completely highlighted?
-    bool Property;     // A general boolean property (used with SH, Perl, YAML, cmake,...).
-    int LastState;     // The state of this block before it is highlighted (again).
-    /* "Nest" is a generalized bracket. This variable
-       is the number of unclosed nests in a block. */
+    QString label;
+    bool Highlighted;
+    bool Property;
+    int LastState;
     int OpenNests;
-    /* "LastFormattedQuote" is used when quotes are formatted
-       on the fly, before they are completely formatted. */
     int LastFormattedQuote;
     int LastFormattedRegex;
-    QSet<int> OpenQuotes;  // The numbers of open double quotes of open nests.
+    QSet<int> OpenQuotes;
 };
-/*************************/
-/* This is a tricky but effective way for syntax highlighting. */
+
 class Highlighter : public QSyntaxHighlighter {
     Q_OBJECT
 
@@ -117,112 +97,133 @@ class Highlighter : public QSyntaxHighlighter {
     }
 
    protected:
-    void highlightBlock(const QString& text);
+    void highlightBlock(const QString& text) override;
 
    private:
     QStringList keywords(const QString& lang);
     QStringList types();
-    bool isEscapedChar(const QString& text, const int pos) const;
-    bool isEscapedQuote(const QString& text, const int pos, bool isStartQuote, bool skipCommandSign = false);
-    bool isQuoted(const QString& text, const int index, bool skipCommandSign = false, const int start = 0);
-    bool isPerlQuoted(const QString& text, const int index);
-    bool isJSQuoted(const QString& text, const int index);
-    bool isMLCommented(const QString& text, const int index, int comState = commentState, const int start = 0);
+    bool isEscapedChar(const QString& text, int pos) const;
+    bool isEscapedQuote(const QString& text, int pos, bool isStartQuote, bool skipCommandSign = false);
+    bool isQuoted(const QString& text, int index, bool skipCommandSign = false, int start = 0);
+    bool isPerlQuoted(const QString& text, int index);
+    bool isJSQuoted(const QString& text, int index);
+    bool isMLCommented(const QString& text, int index, int comState = commentState, int start = 0);
     bool isHereDocument(const QString& text);
-    void pythonMLComment(const QString& text, const int indx);
-    void htmlCSSHighlighter(const QString& text, const int start = 0);
-    void htmlBrackets(const QString& text, const int start = 0);
+    void pythonMLComment(const QString& text, int indx);
+    void htmlCSSHighlighter(const QString& text, int start = 0);
+    void htmlBrackets(const QString& text, int start = 0);
     void htmlJavascript(const QString& text);
     bool isCSSCommented(const QString& text,
                         const QList<int>& valueRegions,
-                        const int index,
+                        int index,
                         int prevQuote = 0,
                         bool prevUrl = false);
-    int isQuotedInCSSValue(const QString& text,
-                           const int valueStart,
-                           const int index,
-                           int prevQuote = 0,
-                           bool prevUrl = false);
-    bool isInsideCSSValueUrl(const QString& text,
-                             const int valueStart,
-                             const int index,
-                             int prevQuote = 0,
-                             bool prevUrl = false);
-    void formatAttrSelectors(const QString& text, const int start, const int pos);
-    bool isInsideAttrSelector(const QString& text, const int pos, const int start);
-    void cssHighlighter(const QString& text, bool mainFormatting, const int start = 0);
-    void singleLineComment(const QString& text, const int start);
+    int isQuotedInCSSValue(const QString& text, int valueStart, int index, int prevQuote = 0, bool prevUrl = false);
+    bool isInsideCSSValueUrl(const QString& text, int valueStart, int index, int prevQuote = 0, bool prevUrl = false);
+    void formatAttrSelectors(const QString& text, int start, int pos);
+    bool isInsideAttrSelector(const QString& text, int pos, int start);
+    void cssHighlighter(const QString& text, bool mainFormatting, int start = 0);
+    void singleLineComment(const QString& text, int start);
     bool multiLineComment(const QString& text,
-                          const int index,
+                          int index,
                           const QRegularExpression& commentStartExp,
                           const QRegularExpression& commentEndExp,
-                          const int commState,
+                          int commState,
                           const QTextCharFormat& comFormat);
     bool textEndsWithBackSlash(const QString& text) const;
-    bool multiLineQuote(const QString& text, const int start = 0, int comState = commentState);
+    bool multiLineQuote(const QString& text, int start = 0, int comState = commentState);
     void multiLinePerlQuote(const QString& text);
-    void multiLineJSQuote(const QString& text, const int start, int comState);
+    void multiLineJSQuote(const QString& text, int start, int comState);
     void setFormatWithoutOverwrite(int start,
                                    int count,
                                    const QTextCharFormat& newFormat,
                                    const QTextCharFormat& oldFormat);
-    /* SH specific methods: */
+
     void SH_MultiLineQuote(const QString& text);
-    bool SH_SkipQuote(const QString& text, const int pos, bool isStartQuote);
+    bool SH_SkipQuote(const QString& text, int pos, bool isStartQuote);
     int formatInsideCommand(const QString& text,
-                            const int minOpenNests,
+                            int minOpenNests,
                             int& nests,
                             QSet<int>& quotes,
-                            const bool isHereDocStart,
-                            const int index);
+                            bool isHereDocStart,
+                            int index);
     bool SH_CmndSubstVar(const QString& text,
                          TextBlockData* currentBlockData,
                          int oldOpenNests,
                          const QSet<int>& oldOpenQuotes);
 
+    void highlightUrlsWithinQuote(const QString& text, int start, int length);
+
+    void handleSingleQuote(const QString& text,
+                           int& currentIndex,
+                           bool inComment,
+                           bool doubleQuoted,
+                           bool isHereDocStart,
+                           int& nestCount);
+
+    void handleDoubleQuote(const QString& text, int& currentIndex, bool inComment, bool& doubleQuoted);
+
+    void handleDollarSign(const QString& text,
+                          int& currentIndex,
+                          bool inComment,
+                          bool doubleQuoted,
+                          bool isHereDocStart,
+                          int& parenDepth,
+                          int& nestCount,
+                          QSet<int>& quotes);
+
+    void handleOpenParenthesis(int& currentIndex, bool doubleQuoted, bool inComment, int& parenDepth);
+
+    bool handleCloseParenthesis(int& currentIndex,
+                                bool doubleQuoted,
+                                bool inComment,
+                                int& parenDepth,
+                                int& nestCount,
+                                int initialOpenNests,
+                                QSet<int>& quotes);
+
+    void handleCommentSign(const QString& text, int& currentIndex, bool& inComment, bool doubleQuoted);
+
+    void handleDefaultChar(int& currentIndex, bool inComment, bool doubleQuoted);
+
+    int closeOpenQuoteFromPreviousBlock(const QString& text, int prevState, bool isHereDocStart);
+
     void debControlFormatting(const QString& text);
 
-    bool isEscapedRegex(const QString& text, const int pos);
-    bool isEscapedPerlRegex(const QString& text, const int pos);
-    bool isEscapedRegexEndSign(const QString& text, const int start, const int pos, bool ignoreClasses = false) const;
-    bool isInsideRegex(const QString& text, const int index);
-    bool isInsidePerlRegex(const QString& text, const int index);
-    void multiLineRegex(const QString& text, const int index);
+    bool isEscapedRegex(const QString& text, int pos);
+    bool isEscapedPerlRegex(const QString& text, int pos);
+    bool isEscapedRegexEndSign(const QString& text, int start, int pos, bool ignoreClasses = false) const;
+    bool isInsideRegex(const QString& text, int index);
+    bool isInsidePerlRegex(const QString& text, int index);
+    void multiLineRegex(const QString& text, int index);
     void multiLinePerlRegex(const QString& text);
-    int findDelimiter(const QString& text,
-                      const int index,
-                      const QRegularExpression& delimExp,
-                      int& capturedLength) const;
+    int findDelimiter(const QString& text, int index, const QRegularExpression& delimExp, int& capturedLength) const;
 
-    /* XML */
-    bool isXmlQuoted(const QString& text, const int index);
-    bool isXxmlComment(const QString& text, const int index, const int start);
-    bool isXmlValue(const QString& text, const int index, const int start);
+    bool isXmlQuoted(const QString& text, int index);
+    bool isXxmlComment(const QString& text, int index, int start);
+    bool isXmlValue(const QString& text, int index, int start);
     void xmlValues(const QString& text);
     void xmlQuotes(const QString& text);
     void xmlComment(const QString& text);
     void highlightXmlBlock(const QString& text);
 
-    /* Lua */
-    bool isLuaQuote(const QString& text, const int index) const;
-    bool isSingleLineLuaComment(const QString& text, const int index, const int start) const;
+    bool isLuaQuote(const QString& text, int index) const;
+    bool isSingleLineLuaComment(const QString& text, int index, int start) const;
     void multiLineLuaComment(const QString& text);
     void highlightLuaBlock(const QString& text);
 
-    /* Markdown */
     void markdownSingleLineCode(const QString& text);
     bool isIndentedCodeBlock(const QString& text, int& index, QRegularExpressionMatch& match) const;
     void markdownComment(const QString& text);
     bool markdownMultiLine(const QString& text,
                            const QString& oldStartPattern,
-                           const int indentation,
-                           const int state,
+                           int indentation,
+                           int state,
                            const QTextCharFormat& txtFormat);
     void markdownFonts(const QString& text);
     void highlightMarkdownBlock(const QString& text);
 
-    /* Yaml */
-    bool isYamlKeyQuote(const QString& key, const int pos);
+    bool isYamlKeyQuote(const QString& key, int pos);
     bool yamlOpenBraces(const QString& text,
                         const QRegularExpression& startExp,
                         const QRegularExpression& endExp,
@@ -232,65 +233,54 @@ class Highlighter : public QSyntaxHighlighter {
     void yamlLiteralBlock(const QString& text);
     void highlightYamlBlock(const QString& text);
 
-    /* reST */
     void reSTMainFormatting(int start, const QString& text);
     void highlightReSTBlock(const QString& text);
 
-    /* Fountain */
     void fountainFonts(const QString& text);
     bool isFountainLineBlank(const QTextBlock& block);
     void highlightFountainBlock(const QString& text);
 
-    /* LaTeX */
     void latexFormula(const QString& text);
 
-    /* Pascal */
-    bool isPascalQuoted(const QString& text, const int index, const int start = 0) const;
-    bool isPascalMLCommented(const QString& text, const int index, const int start = 0) const;
-    void singleLinePascalComment(const QString& text, const int start = 0);
-    void pascalQuote(const QString& text, const int start = 0);
+    bool isPascalQuoted(const QString& text, int index, int start = 0) const;
+    bool isPascalMLCommented(const QString& text, int index, int start = 0) const;
+    void singleLinePascalComment(const QString& text, int start = 0);
+    void pascalQuote(const QString& text, int start = 0);
     void multiLinePascalComment(const QString& text);
 
-    /* Java */
-    bool isEscapedJavaQuote(const QString& text, const int pos, bool isStartQuote) const;
-    bool isJavaSingleCommentQuoted(const QString& text, const int index, const int start) const;
-    bool isJavaStartQuoteMLCommented(const QString& text, const int index, const int start = 0) const;
-    void JavaQuote(const QString& text, const int start = 0);
-    void singleLineJavaComment(const QString& text, const int start = 0);
+    bool isEscapedJavaQuote(const QString& text, int pos, bool isStartQuote) const;
+    bool isJavaSingleCommentQuoted(const QString& text, int index, int start) const;
+    bool isJavaStartQuoteMLCommented(const QString& text, int index, int start = 0) const;
+    void JavaQuote(const QString& text, int start = 0);
+    void singleLineJavaComment(const QString& text, int start = 0);
     void multiLineJavaComment(const QString& text);
     void javaMainFormatting(const QString& text);
     void javaBraces(const QString& text);
 
-    /* Json */
     void highlightJsonBlock(const QString& text);
-    void jsonKey(const QString& text, const int start, int& K, int& V, int& B, bool& insideValue, QString& braces);
-    void jsonValue(const QString& text, const int start, int& K, int& V, int& B, bool& insideValue, QString& braces);
+    void jsonKey(const QString& text, int start, int& K, int& V, int& B, bool& insideValue, QString& braces);
+    void jsonValue(const QString& text, int start, int& K, int& V, int& B, bool& insideValue, QString& braces);
 
-    /* Ruby */
-    bool isEscapedRubyRegex(const QString& text, const int pos);
+    bool isEscapedRubyRegex(const QString& text, int pos);
     int findRubyDelimiter(const QString& text,
-                          const int index,
+                          int index,
                           const QRegularExpression& delimExp,
                           int& capturedLength) const;
-    bool isInsideRubyRegex(const QString& text, const int index);
+    bool isInsideRubyRegex(const QString& text, int index);
     void multiLineRubyRegex(const QString& text);
 
-    /* Tcl */
-    bool isEscapedTclQuote(const QString& text, const int pos, const int start, bool isStartQuote);
-    bool isTclQuoted(const QString& text, const int index, const int start);
-    bool insideTclBracedVariable(const QString& text, const int pos, const int start, bool quotesAreFormatted = false);
+    bool isEscapedTclQuote(const QString& text, int pos, int start, bool isStartQuote);
+    bool isTclQuoted(const QString& text, int index, int start);
+    bool insideTclBracedVariable(const QString& text, int pos, int start, bool quotesAreFormatted = false);
     void multiLineTclQuote(const QString& text);
     void highlightTclBlock(const QString& text);
 
-    /* Rust */
     void multiLineRustQuote(const QString& text);
-    bool isRustQuoted(const QString& text, const int index, const int start);
+    bool isRustQuoted(const QString& text, int index, int start);
 
-    /* cmake */
-    bool isCmakeDoubleBracketed(const QString& text, const int index, const int start);
+    bool isCmakeDoubleBracketed(const QString& text, int index, int start);
     bool cmakeDoubleBrackets(const QString& text, int oldBracketLength, bool wasComment);
 
-    /* Toml */
     void tomlQuote(const QString& text);
 
     struct HighlightingRule {
@@ -300,48 +290,41 @@ class Highlighter : public QSyntaxHighlighter {
     QList<HighlightingRule> highlightingRules;
 
     QRegularExpression hereDocDelimiter;
-
-    /* Multiline comments: */
     QRegularExpression commentStartExpression;
     QRegularExpression commentEndExpression;
 
     QRegularExpression htmlCommetStart, htmlCommetEnd;
-    QRegularExpression htmlSubcommetStart, htmlSubcommetEnd;  // For CSS and JS inside HTML
+    QRegularExpression htmlSubcommetStart, htmlSubcommetEnd;
 
-    QTextCharFormat mainFormat;     // The format before highlighting.
-    QTextCharFormat neutralFormat;  // When a color near that of mainFormat is needed.
+    QTextCharFormat mainFormat;
+    QTextCharFormat neutralFormat;
     QTextCharFormat commentFormat;
-    QTextCharFormat commentBoldFormat;  // Only for Java and inside its comments.
-    QTextCharFormat noteFormat;         // Notes inside comments (NOTE:, WARNING:, etc.).
-    QTextCharFormat quoteFormat;        // Usually for double quotes.
-    QTextCharFormat altQuoteFormat;     // Usually for single quotes.
+    QTextCharFormat commentBoldFormat;
+    QTextCharFormat noteFormat;
+    QTextCharFormat quoteFormat;
+    QTextCharFormat altQuoteFormat;
     QTextCharFormat urlInsideQuoteFormat;
-    QTextCharFormat urlFormat;  // Inside comments.
+    QTextCharFormat urlFormat;
     QTextCharFormat blockQuoteFormat;
     QTextCharFormat codeBlockFormat;
-    QTextCharFormat whiteSpaceFormat;   // For whitespaces.
-    QTextCharFormat translucentFormat;  // When highlighting shouldn't be done (for huge blocks).
+    QTextCharFormat whiteSpaceFormat;
+    QTextCharFormat translucentFormat;
     QTextCharFormat regexFormat;
     QTextCharFormat errorFormat;
-    QTextCharFormat rawLiteralFormat;  // C++ raw string literals.
+    QTextCharFormat rawLiteralFormat;
 
-    /* Programming language: */
     QString progLan;
 
     QRegularExpression quoteMark, singleQuoteMark, backQuote, mixedQuoteMark, mixedQuoteBackquote;
     QRegularExpression xmlLt, xmlGt;
-    QRegularExpression cppLiteralStart;  // For C++ raw string literals.
+    QRegularExpression cppLiteralStart;
 
-    /* These are the customizable colors. Each color should be used only for
-       one purpose, because highlighting is done based on color differences. */
     QColor Blue, DarkBlue, Red, DarkRed, Verda, DarkGreen, DarkGreenAlt, Magenta, DarkMagenta, Violet, Brown,
         DarkYellow;
 
-    /* The start and end cursors of the visible text: */
     QTextCursor startCursor, endCursor;
 
-    int maxBlockSize_;  // No highlighting for greater blocks.
-
+    int maxBlockSize_;
     bool hasQuotes_;
     bool multilineQuote_;
     bool mixedQuotes_;
@@ -349,44 +332,24 @@ class Highlighter : public QSyntaxHighlighter {
     static const QRegularExpression urlPattern;
     static const QRegularExpression notePattern;
 
-    /* Block states: */
     enum {
         commentState = 1,
-
-        /* Next-line commnets (ending back-slash in c/c++): */
         nextLineCommentState,
-
-        /* Quotation marks: */
         doubleQuoteState,
         singleQuoteState,
-
         SH_DoubleQuoteState,
         SH_SingleQuoteState,
         SH_MixedDoubleQuoteState,
         SH_MixedSingleQuoteState,
-
-        /* Python comments: */
         pyDoubleQuoteState,
         pySingleQuoteState,
-
         xmlValueState,
-
-        /* Markdown: */
         markdownBlockQuoteState,
-
-        /* Markdown and reStructuredText */
         codeBlockState,
-
-        /* JavaScript template literals */
         JS_templateLiteralState,
-
-        /* Regex inside JavaScript, QML and Perl: */
-        regexSearchState,  // search and replace (only in Perl)
+        regexSearchState,
         regexState,
-        regexExtraState, /* JS: The line ends with a JS regex (+ spaces); or
-                            Perl: A Perl quoting operator isn't complete. */
-
-        /* HTML: */
+        regexExtraState,
         htmlBracketState,
         htmlStyleState,
         htmlStyleDoubleQuoteState,
@@ -395,22 +358,16 @@ class Highlighter : public QSyntaxHighlighter {
         htmlCSSCommentState,
         htmlJavaState,
         htmlJavaCommentState,
-
-        /* CSS: */
         cssBlockState,
         commentInCssBlockState,
         commentInCssValueState,
         cssValueState,
-
-        /* Used to update the format of the next line (as in JavaScript): */
         updateState,
+        endState
 
-        endState  // 31
-
-        /* For here-docs, state >= endState or state < -1. */
     };
 };
 
 }  // namespace FeatherPad
 
-#endif  // HIGHLIGHTER_H
+#endif

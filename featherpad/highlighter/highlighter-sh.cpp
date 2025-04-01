@@ -1,419 +1,580 @@
-/*
- * Copyright (C) Pedram Pourang (aka Tsu Jan) 2014-2024 <tsujan2000@gmail.com>
- *
- * FeatherPad is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * FeatherPad is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * @license GPL-3.0+ <https://spdx.org/licenses/GPL-3.0+.html>
- */
-
 #include "highlighter.h"
 
 namespace FeatherPad {
 
-// multi/single-line quote highlighting for bash.
+/*!
+ * \brief SH_MultiLineQuote highlights multi/single-line quotes for bash.
+ *
+ * This function attempts to detect and apply proper quote formatting (both single and double quotes)
+ * in a multi-line context (e.g., continued from a previous block). It also considers here-doc
+ * delimiters and additional complexities introduced by bash-like syntax.
+ */
 void Highlighter::SH_MultiLineQuote(const QString& text) {
     int index = 0;
     QRegularExpressionMatch quoteMatch;
     QRegularExpression quoteExpression = mixedQuoteMark;
-    int prevState = previousBlockState();
-    /* this tells us whether we are at the start of a here-doc or inside an
-       open quote of a command substitution continued from the previous line */
-    int initialState = currentBlockState();
 
-    bool wasDQuoted(prevState == doubleQuoteState || prevState == SH_MixedDoubleQuoteState ||
-                    prevState == SH_MixedSingleQuoteState);
-    bool wasQuoted(wasDQuoted || prevState == singleQuoteState);
+    const int prevState = previousBlockState();
+    const int initialState = currentBlockState();
+
+    // Distinguish single/double-quoted states from the previous block.
+    bool wasDoubleQuoted = (prevState == doubleQuoteState || prevState == SH_MixedDoubleQuoteState ||
+                            prevState == SH_MixedSingleQuoteState);
+    bool wasQuoted = (wasDoubleQuoted || prevState == singleQuoteState);
+
+    // Check if the previous block ended with a here-doc delimiter (which can affect quoting).
     QTextBlock prevBlock = currentBlock().previous();
-    TextBlockData* prevData = nullptr;
     if (prevBlock.isValid()) {
-        prevData = static_cast<TextBlockData*>(prevBlock.userData());
-        if (prevData && prevData->getProperty()) {  // at the end delimiter of a here-doc started like VAR="$(cat<<EOF
-            wasQuoted = wasDQuoted = true;
+        auto* prevData = static_cast<TextBlockData*>(prevBlock.userData());
+        // If we ended a here-doc in a line like: VAR="$(cat<<EOF"
+        if (prevData && prevData->getProperty()) {
+            wasQuoted = wasDoubleQuoted = true;
         }
     }
 
-    TextBlockData* curData = static_cast<TextBlockData*>(currentBlock().userData());
+    // Check if the current block has a pending here-doc delimiter
+    auto* curData = static_cast<TextBlockData*>(currentBlock().userData());
     int hereDocDelimPos = -1;
-    if (!curData->labelInfo().isEmpty())  // the label is delimStr
-    {
+    if (curData && !curData->labelInfo().isEmpty()) {
+        // If the block has a label/delimiter, find the position of the hereDocDelimiter.
         hereDocDelimPos = text.indexOf(hereDocDelimiter);
-        while (hereDocDelimPos > -1 && isQuoted(text, hereDocDelimPos, true)) {  // see isHereDocument()
+        // Skip all quoted hereDocDelimiter positions.
+        while (hereDocDelimPos > -1 && isQuoted(text, hereDocDelimPos, /*isStart=*/true)) {
             hereDocDelimPos = text.indexOf(hereDocDelimiter, hereDocDelimPos + 2);
         }
     }
 
-    /* find the start quote */
+    // If we weren't already in a quote, try to locate the first quote in the current line.
+    // Otherwise, we continue quoting from the previous line.
     if (!wasQuoted) {
         index = text.indexOf(quoteExpression);
-        /* skip escaped start quotes and all comments */
-        while (SH_SkipQuote(text, index, true))
+        // Skip escaped quotes and also skip comment sections.
+        while (SH_SkipQuote(text, index, /*isStartQuote=*/true)) {
             index = text.indexOf(quoteExpression, index + 1);
-
-        /* check if the first quote is after the here-doc start delimiter */
-        if (index >= 0 && hereDocDelimPos > -1 && index > hereDocDelimPos)
+        }
+        // If the quote is beyond the here-doc delimiter, ignore it.
+        if (index >= 0 && hereDocDelimPos > -1 && index > hereDocDelimPos) {
             index = -1;
-
-        /* if the start quote is found... */
+        }
+        // Check if it is single or double quote by actual character match
         if (index >= 0) {
-            /* ... distinguish between double and single quotes */
-            if (text.at(index) == quoteMark.pattern().at(0))
+            if (text.at(index) == quoteMark.pattern().at(0)) {
                 quoteExpression = quoteMark;
-            else
+            }
+            else {
                 quoteExpression = singleQuoteMark;
+            }
         }
     }
-    else  // but if we're inside a quotation
-    {
-        /* ... distinguish between the two quote kinds
-           by checking the previous line */
-        if (wasDQuoted)
+    else {
+        // We are already in a quote from the previous line
+        if (wasDoubleQuoted) {
             quoteExpression = quoteMark;
-        else
+        }
+        else {
             quoteExpression = singleQuoteMark;
+        }
     }
 
+    // Main loop: search for matching quotes (single or double) until the line ends.
     while (index >= 0) {
-        /* if the search is continued... */
+        // If we get the "mixedQuoteMark", we need to decide again if it’s single or double
         if (quoteExpression == mixedQuoteMark) {
-            /* ... distinguish between double and single quotes
-               again because the quote mark may have changed */
-            if (text.at(index) == quoteMark.pattern().at(0))
+            if (text.at(index) == quoteMark.pattern().at(0)) {
                 quoteExpression = quoteMark;
-            else
+            }
+            else {
                 quoteExpression = singleQuoteMark;
+            }
         }
 
-        int endIndex;
-        /* if there's no start quote ... */
+        // Find the corresponding end-quote
+        int endIndex = -1;
         if (index == 0 && wasQuoted) {
-            /* ... search for the end quote from the line start */
+            // We are continuing a quote from the very start of the line
             endIndex = text.indexOf(quoteExpression, 0, &quoteMatch);
         }
-        else  // otherwise, search for the end quote from the start quote
+        else {
+            // Normal search: from just after the quote
             endIndex = text.indexOf(quoteExpression, index + 1, &quoteMatch);
+        }
 
-        /* check if the end quote is escaped */
-        while (SH_SkipQuote(text, endIndex, false))
+        // Skip any escaped quotes or comments at the end index
+        while (SH_SkipQuote(text, endIndex, /*isStartQuote=*/false)) {
             endIndex = text.indexOf(quoteExpression, endIndex + 1, &quoteMatch);
+        }
 
-        int quoteLength;
+        // Calculate the length of the quote, applying formatting
+        int quoteLength = 0;
         if (endIndex == -1) {
+            // If we cannot find the closing quote, mark this block as still inside the quote
             if (quoteExpression != quoteMark || hereDocDelimPos == -1) {
-                setCurrentBlockState(quoteExpression == quoteMark
-                                         ? initialState == SH_DoubleQuoteState   ? SH_MixedDoubleQuoteState
-                                           : initialState == SH_SingleQuoteState ? SH_MixedSingleQuoteState
-                                                                                 : doubleQuoteState
-                                         : singleQuoteState);
+                setCurrentBlockState(
+                    (quoteExpression == quoteMark)
+                        ? (initialState == SH_DoubleQuoteState
+                               ? SH_MixedDoubleQuoteState
+                               : (initialState == SH_SingleQuoteState ? SH_MixedSingleQuoteState : doubleQuoteState))
+                        : singleQuoteState);
             }
-            else if (curData->openNests() > 0)  // like VAR="$(cat<<EOF
-                curData->setProperty(true);     // initialState is always that of here-doc
+            else if (curData && curData->openNests() > 0) {
+                // Something like: VAR="$(cat<<EOF
+                curData->setProperty(true);
+            }
             quoteLength = text.length() - index;
         }
         else {
-            quoteLength = endIndex - index + quoteMatch.capturedLength();  // 1
+            // Found closing quote
+            quoteLength = endIndex - index + quoteMatch.capturedLength();
         }
-        if (quoteExpression == quoteMark)
+
+        // Apply formatting to the detected quote range
+        if (quoteExpression == quoteMark) {
             setFormatWithoutOverwrite(index, quoteLength, quoteFormat, neutralFormat);
-        else
+        }
+        else {
             setFormat(index, quoteLength, altQuoteFormat);
-
-        QString str = text.sliced(index, quoteLength);
-        int urlIndex = 0;
-        QRegularExpressionMatch urlMatch;
-        while ((urlIndex = str.indexOf(urlPattern, urlIndex, &urlMatch)) > -1) {
-            setFormat(urlIndex + index, urlMatch.capturedLength(), urlInsideQuoteFormat);
-            urlIndex += urlMatch.capturedLength();
         }
 
-        /* the next quote may be different */
+        // Within this quote range, see if there's any URL that needs special formatting
+        highlightUrlsWithinQuote(text, index, quoteLength);
+
+        // Next iteration might flip back to "mixedQuoteMark" if we find a different type of quote
         quoteExpression = mixedQuoteMark;
         index = text.indexOf(quoteExpression, index + quoteLength);
 
-        /* skip escaped start quotes and all comments */
-        while (SH_SkipQuote(text, index, true))
+        // Again, skip any escaped quotes or comment sections
+        while (SH_SkipQuote(text, index, /*isStartQuote=*/true)) {
             index = text.indexOf(quoteExpression, index + 1);
-
-        /* check if the first quote is after the here-doc start delimiter */
-        if (hereDocDelimPos > -1 && index > hereDocDelimPos)
-            index = -1;
+        }
+        if (hereDocDelimPos > -1 && index > hereDocDelimPos) {
+            index = -1;  // Stop if we passed the here-doc delimiter
+        }
     }
 }
-/*************************/
-// The bash quotes that should be skipped while multiline quotes are being highlighted.
+
+/*!
+ * \brief Helper function to highlight URLs within a quoted text range.
+ */
+void Highlighter::highlightUrlsWithinQuote(const QString& text, int start, int length) {
+    QString segment = text.mid(start, length);
+    int urlIndex = 0;
+    QRegularExpressionMatch urlMatch;
+
+    while ((urlIndex = segment.indexOf(urlPattern, urlIndex, &urlMatch)) > -1) {
+        setFormat(start + urlIndex, urlMatch.capturedLength(), urlInsideQuoteFormat);
+        urlIndex += urlMatch.capturedLength();
+    }
+}
+
+/*!
+ * \brief SH_SkipQuote checks if we should skip the quote at a given position,
+ *        e.g., if it is escaped or within a comment, URL, or other special format.
+ */
 bool Highlighter::SH_SkipQuote(const QString& text, const int pos, bool isStartQuote) {
-    if (isEscapedQuote(text, pos, isStartQuote))
+    if (isEscapedQuote(text, pos, isStartQuote)) {
         return true;
-    QTextCharFormat fi = format(pos);
-    return (fi == neutralFormat  // not needed
-            || fi == commentFormat || fi == urlFormat || fi == quoteFormat || fi == altQuoteFormat ||
-            fi == urlInsideQuoteFormat);
+    }
+    // We skip if the format is already set to comment, URL, or quoted text.
+    QTextCharFormat fmt = format(pos);
+    return (fmt == neutralFormat || fmt == commentFormat || fmt == urlFormat || fmt == quoteFormat ||
+            fmt == altQuoteFormat || fmt == urlInsideQuoteFormat);
 }
-/*************************/
-// Formats the text inside a command substitution variable character by character,
-// considering single and double quotes, code block start and end, and comments.
-int Highlighter::formatInsideCommand(const QString& text,
-                                     const int minOpenNests,
-                                     int& nests,
-                                     QSet<int>& quotes,
-                                     const bool isHereDocStart,
-                                     const int index) {
-    int p = 0;
-    int indx = index;
-    bool doubleQuoted(quotes.contains(nests));
-    bool comment(false);
-    int initialOpenNests = nests;
-    while (nests > minOpenNests && indx < text.length()) {
-        while (format(indx) == commentFormat)
-            ++indx;
-        if (indx == text.length())
-            break;
-        const QChar c = text.at(indx);
-        if (c == '\'') {
-            if (comment) {
-                setFormat(indx, 1, commentFormat);
-                ++indx;
-            }
-            else {
-                if (doubleQuoted) {
-                    setFormat(indx, 1, quoteFormat);
-                    ++indx;
-                }
-                else if (isEscapedQuote(text, indx, true))
-                    ++indx;
-                else {
-                    int end = text.indexOf(singleQuoteMark, indx + 1);
-                    while (isEscapedQuote(text, end, false))
-                        end = text.indexOf(singleQuoteMark, end + 1);
-                    if (end == -1) {
-                        setFormat(indx, text.length() - indx, altQuoteFormat);
-                        if (!isHereDocStart)
-                            setCurrentBlockState(SH_SingleQuoteState);
-                        indx = text.length();
-                    }
-                    else {
-                        setFormat(indx, end + 1 - indx, altQuoteFormat);
-                        indx = end + 1;
-                    }
-                }
-            }
-        }
-        else if (c == '\"') {
-            if (comment)
-                setFormat(indx, 1, commentFormat);
-            else if (!isEscapedQuote(text, indx, true)) {
-                doubleQuoted = !doubleQuoted;
-                setFormat(indx, 1, quoteFormat);
-            }
-            ++indx;
-        }
-        else if (c == '$')  // may start a new code block
-        {
-            if (comment) {
-                setFormat(indx, 1, commentFormat);
-                ++indx;
-            }
-            else {
-                if (text.mid(indx, 2) == "$(") {
-                    setFormat(indx, 2, neutralFormat);
 
-                    int Nests = nests + 1;
-                    indx = formatInsideCommand(text, nests, Nests, quotes, isHereDocStart, indx + 2);
-                    nests = Nests;
-                }
-                else {
-                    if (doubleQuoted)
-                        setFormat(indx, 1, quoteFormat);
-                    else
-                        setFormat(indx, 1, neutralFormat);
-                    ++indx;
-                }
-            }
+/*!
+ * \brief formatInsideCommand handles highlighting of bash command substitution variables $(...).
+ *
+ * The function processes characters one by one, handling nesting, quotes, parentheses, comments, etc.
+ * It returns the updated index up to which text has been processed.
+ */
+int Highlighter::formatInsideCommand(const QString& text,
+                                     int minOpenNests,
+                                     int& nestCount,
+                                     QSet<int>& quotes,
+                                     bool isHereDocStart,
+                                     int index) {
+    int parenDepth = 0;
+    int currentIndex = index;
+    bool doubleQuoted = quotes.contains(nestCount);
+    bool inComment = false;
+
+    const int initialOpenNests = nestCount;
+    const int textLen = text.length();
+
+    while (nestCount > minOpenNests && currentIndex < textLen) {
+        // Skip any chars already formatted as comments
+        while (currentIndex < textLen && format(currentIndex) == commentFormat) {
+            ++currentIndex;
         }
-        else if (c == '(') {
-            if (doubleQuoted)
-                setFormat(indx, 1, quoteFormat);
-            else {
-                if (comment)
-                    setFormat(indx, 1, commentFormat);
-                else
-                    setFormat(indx, 1, neutralFormat);
-                if (!isEscapedChar(text, indx))
-                    ++p;
-            }
-            ++indx;
+
+        if (currentIndex >= textLen)
+            break;
+
+        QChar c = text.at(currentIndex);
+
+        // Single quote
+        if (c == QLatin1Char('\'')) {
+            handleSingleQuote(text, currentIndex, inComment, doubleQuoted, isHereDocStart, nestCount);
+            continue;
         }
-        else if (c == ')')  // may end a code block
-        {
-            if (doubleQuoted)
-                setFormat(indx, 1, quoteFormat);
-            else {
-                if (!isEscapedChar(text, indx)) {
-                    --p;
-                    if (p < 0) {
-                        setFormat(indx, 1, neutralFormat);  // never commented
-                        quotes.remove(initialOpenNests);
-                        --nests;
-                        initialOpenNests = nests;
-                        doubleQuoted = quotes.contains(nests);
-                        p = 0;
-                    }
-                    else if (comment)
-                        setFormat(indx, 1, commentFormat);
-                    else
-                        setFormat(indx, 1, neutralFormat);
-                }
-                else if (comment)
-                    setFormat(indx, 1, commentFormat);
-                else
-                    setFormat(indx, 1, neutralFormat);
-            }
-            ++indx;
+        // Double quote
+        else if (c == QLatin1Char('\"')) {
+            handleDoubleQuote(text, currentIndex, inComment, doubleQuoted);
+            continue;
         }
-        else if (c == '#')  // may be comment sign
-        {
-            if (comment)
-                setFormat(indx, 1, commentFormat);
-            else if (doubleQuoted)
-                setFormat(indx, 1, quoteFormat);
-            else {
-                if (indx == 0) {
-                    comment = true;
-                    setFormat(indx, 1, commentFormat);
-                }
-                else {
-                    if (text.at(indx - 1) == QChar(QChar::Space)) {
-                        comment = true;
-                        setFormat(indx, 1, commentFormat);
-                    }
-                    else
-                        setFormat(indx, 1, neutralFormat);
-                }
-            }
-            ++indx;
+        // Possible start of new command substitution
+        else if (c == QLatin1Char('$')) {
+            handleDollarSign(text, currentIndex, inComment, doubleQuoted, isHereDocStart, parenDepth, nestCount,
+                             quotes);
+            continue;
         }
-        else  // any non-special character
-        {
-            if (comment)
-                setFormat(indx, 1, commentFormat);
-            else if (doubleQuoted)
-                setFormat(indx, 1, quoteFormat);
-            else
-                setFormat(indx, 1, neutralFormat);
-            ++indx;
+        // Opening parenthesis
+        else if (c == QLatin1Char('(')) {
+            handleOpenParenthesis(currentIndex, doubleQuoted, inComment, parenDepth);
+            continue;
+        }
+        // Closing parenthesis
+        else if (c == QLatin1Char(')')) {
+            if (handleCloseParenthesis(currentIndex, doubleQuoted, inComment, parenDepth, nestCount, initialOpenNests,
+                                       quotes)) {
+                // If handleCloseParenthesis returns true, we've closed a code block
+                continue;
+            }
+            // else no code block closed; just a normal character
+        }
+        // Possible comment sign
+        else if (c == QLatin1Char('#')) {
+            handleCommentSign(text, currentIndex, inComment, doubleQuoted);
+            continue;
+        }
+        // Default / non-special character
+        else {
+            handleDefaultChar(currentIndex, inComment, doubleQuoted);
+            continue;
         }
     }
 
-    if (nests < minOpenNests)
-        nests = minOpenNests;  // impossible
-    /* save the states */
+    if (nestCount < minOpenNests) {
+        nestCount = minOpenNests;  // Should never happen, but just to be safe
+    }
+
+    // Preserve the quoting state if still double-quoted
     if (doubleQuoted) {
-        if (!isHereDocStart
-            /* an open subcommand may have already set the state */
-            && currentBlockState() != SH_SingleQuoteState) {  // FIXME: This state is redundant. remove it later!
+        // If no subcommand changed the block state, set ourselves to double-quote
+        if (!isHereDocStart && currentBlockState() != SH_SingleQuoteState) {
             setCurrentBlockState(SH_DoubleQuoteState);
         }
         quotes.insert(initialOpenNests);
     }
-    else
+    else {
         quotes.remove(initialOpenNests);
-    return indx;
+    }
+
+    return currentIndex;
 }
-/*************************/
-// This function highlights command substitution variables $(...).
+
+//------------------------------------------------------------------------------
+// Below are the new helper methods to keep formatInsideCommand() more readable.
+//------------------------------------------------------------------------------
+
+void Highlighter::handleSingleQuote(const QString& text,
+                                    int& currentIndex,
+                                    bool inComment,
+                                    bool doubleQuoted,
+                                    bool isHereDocStart,
+                                    int& nestCount) {
+    if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+        ++currentIndex;
+        return;
+    }
+
+    if (doubleQuoted) {
+        // If inside double quotes, just format the single quote as double-quoted text
+        setFormat(currentIndex, 1, quoteFormat);
+        ++currentIndex;
+        return;
+    }
+
+    // Check if this single quote is escaped
+    if (isEscapedQuote(text, currentIndex, /*isStartQuote=*/true)) {
+        ++currentIndex;
+        return;
+    }
+
+    // Otherwise, search for the matching closing single quote
+    int end = text.indexOf(singleQuoteMark, currentIndex + 1);
+    while (isEscapedQuote(text, end, /*isStartQuote=*/false)) {
+        end = text.indexOf(singleQuoteMark, end + 1);
+    }
+
+    if (end == -1) {
+        // No matching end, so highlight until the end of line
+        setFormat(currentIndex, text.length() - currentIndex, altQuoteFormat);
+        if (!isHereDocStart) {
+            setCurrentBlockState(SH_SingleQuoteState);
+        }
+        currentIndex = text.length();
+    }
+    else {
+        setFormat(currentIndex, end - currentIndex + 1, altQuoteFormat);
+        currentIndex = end + 1;
+    }
+}
+
+void Highlighter::handleDoubleQuote(const QString& text, int& currentIndex, bool inComment, bool& doubleQuoted) {
+    if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+    }
+    else if (!isEscapedQuote(text, currentIndex, /*isStartQuote=*/true)) {
+        // Toggle double-quoted state
+        doubleQuoted = !doubleQuoted;
+        setFormat(currentIndex, 1, quoteFormat);
+    }
+    else {
+        // If escaped, just move on
+    }
+    ++currentIndex;
+}
+
+void Highlighter::handleDollarSign(const QString& text,
+                                   int& currentIndex,
+                                   bool inComment,
+                                   bool doubleQuoted,
+                                   bool isHereDocStart,
+                                   int& parenDepth,
+                                   int& nestCount,
+                                   QSet<int>& quotes) {
+    if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+        ++currentIndex;
+        return;
+    }
+
+    // If this is the start of a code block e.g. "$("
+    if (text.mid(currentIndex, 2) == QLatin1String("$(")) {
+        setFormat(currentIndex, 2, neutralFormat);
+        ++nestCount;
+
+        // Recurse into the code block from currentIndex + 2
+        currentIndex = formatInsideCommand(text, nestCount - 1, nestCount, quotes, isHereDocStart, currentIndex + 2);
+    }
+    else {
+        // Not a code block, just a variable reference
+        if (doubleQuoted) {
+            setFormat(currentIndex, 1, quoteFormat);
+        }
+        else {
+            setFormat(currentIndex, 1, neutralFormat);
+        }
+        ++currentIndex;
+    }
+}
+
+void Highlighter::handleOpenParenthesis(int& currentIndex, bool doubleQuoted, bool inComment, int& parenDepth) {
+    if (doubleQuoted) {
+        setFormat(currentIndex, 1, quoteFormat);
+    }
+    else if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+    }
+    else {
+        setFormat(currentIndex, 1, neutralFormat);
+        if (!isEscapedChar(currentBlock().text(), currentIndex)) {
+            ++parenDepth;
+        }
+    }
+    ++currentIndex;
+}
+
+/*!
+ * \return true if a code block was closed by this parenthesis, false otherwise.
+ */
+bool Highlighter::handleCloseParenthesis(int& currentIndex,
+                                         bool doubleQuoted,
+                                         bool inComment,
+                                         int& parenDepth,
+                                         int& nestCount,
+                                         int initialOpenNests,
+                                         QSet<int>& quotes) {
+    if (doubleQuoted) {
+        setFormat(currentIndex, 1, quoteFormat);
+        ++currentIndex;
+        return false;
+    }
+
+    if (!isEscapedChar(currentBlock().text(), currentIndex)) {
+        --parenDepth;
+        if (parenDepth < 0) {
+            // We just closed a code block
+            setFormat(currentIndex, 1, neutralFormat);
+            quotes.remove(initialOpenNests);
+            --nestCount;
+            // Refresh states
+            initialOpenNests = nestCount;
+            // Re-check if we remain double-quoted
+            bool stillDoubleQuoted = quotes.contains(nestCount);
+            parenDepth = 0;  // reset
+            ++currentIndex;
+            return true;
+        }
+        else if (inComment) {
+            setFormat(currentIndex, 1, commentFormat);
+        }
+        else {
+            setFormat(currentIndex, 1, neutralFormat);
+        }
+    }
+    else if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+    }
+    else {
+        setFormat(currentIndex, 1, neutralFormat);
+    }
+    ++currentIndex;
+    return false;
+}
+
+void Highlighter::handleCommentSign(const QString& text, int& currentIndex, bool& inComment, bool doubleQuoted) {
+    if (inComment) {
+        // Already in a comment, keep formatting
+        setFormat(currentIndex, 1, commentFormat);
+        ++currentIndex;
+        return;
+    }
+
+    if (doubleQuoted) {
+        // Treat it as text if inside double quotes
+        setFormat(currentIndex, 1, quoteFormat);
+    }
+    else {
+        // If '#' is at start or preceded by space, treat as comment
+        if (currentIndex == 0 || (currentIndex > 0 && text.at(currentIndex - 1).isSpace())) {
+            inComment = true;
+            setFormat(currentIndex, 1, commentFormat);
+        }
+        else {
+            setFormat(currentIndex, 1, neutralFormat);
+        }
+    }
+    ++currentIndex;
+}
+
+void Highlighter::handleDefaultChar(int& currentIndex, bool inComment, bool doubleQuoted) {
+    if (inComment) {
+        setFormat(currentIndex, 1, commentFormat);
+    }
+    else if (doubleQuoted) {
+        setFormat(currentIndex, 1, quoteFormat);
+    }
+    else {
+        setFormat(currentIndex, 1, neutralFormat);
+    }
+    ++currentIndex;
+}
+
+//------------------------------------------------------------------------------
+
+/*!
+ * \brief SH_CmndSubstVar highlights command substitution variables "$( ... )" for bash.
+ *
+ * It leverages formatInsideCommand() for deeper logic and keeps track of open subcommands,
+ * quotes, and so on. Returns true if forced highlighting of the next block is necessary.
+ */
 bool Highlighter::SH_CmndSubstVar(const QString& text,
                                   TextBlockData* currentBlockData,
                                   int oldOpenNests,
                                   const QSet<int>& oldOpenQuotes) {
-    if (progLan != "sh" || !currentBlockData)
+    if (progLan != QLatin1String("sh") || !currentBlockData) {
         return false;
+    }
 
-    int prevState = previousBlockState();
+    const int prevState = previousBlockState();
     int curState = currentBlockState();
     bool isHereDocStart = (curState < -1 || curState >= endState);
 
-    int N = 0;
-    QSet<int> Q;
+    // Gather open nests and quotes from the previous block
+    int nestCount = 0;
+    QSet<int> openQuotes;
     QTextBlock prevBlock = currentBlock().previous();
-    /* get the data about open nests and their (double) quotes */
     if (prevBlock.isValid()) {
-        if (TextBlockData* prevData = static_cast<TextBlockData*>(prevBlock.userData())) {
-            N = prevData->openNests();
-            Q = prevData->openQuotes();
+        if (auto* prevData = static_cast<TextBlockData*>(prevBlock.userData())) {
+            nestCount = prevData->openNests();
+            openQuotes = prevData->openQuotes();
         }
     }
 
-    int indx = 0;
-    int end = 0;
+    int startIndex = 0;
+    // If we had an unclosed single/double quote from the previous line, close it first
+    if (nestCount > 0 && (prevState == SH_SingleQuoteState || prevState == SH_DoubleQuoteState ||
+                          prevState == SH_MixedDoubleQuoteState || prevState == SH_MixedSingleQuoteState)) {
+        startIndex = closeOpenQuoteFromPreviousBlock(text, prevState, isHereDocStart);
+    }
 
-    if (N > 0 && (prevState == SH_SingleQuoteState || prevState == SH_DoubleQuoteState ||
-                  prevState == SH_MixedDoubleQuoteState ||
-                  prevState == SH_MixedSingleQuoteState)) {  // there was an unclosed quote in the previous block
-        if (prevState == SH_SingleQuoteState || prevState == SH_MixedSingleQuoteState) {
-            end = text.indexOf(singleQuoteMark);
-            while (isEscapedQuote(text, end, false))
-                end = text.indexOf(singleQuoteMark, end + 1);
-            if (end == -1) {
-                setFormat(0, text.length(), altQuoteFormat);
-                if (!isHereDocStart)
-                    setCurrentBlockState(SH_SingleQuoteState);
-                goto FINISH;
+    // If there's no unclosed code block or quote, search for a new "$(" from startIndex on
+    while (startIndex < text.length()) {
+        if (nestCount == 0) {
+            static QRegularExpression codeBlockStart(R"(\$\()");  // Matches "$("
+            int foundPos = text.indexOf(codeBlockStart, startIndex);
+            if (foundPos == -1 || format(foundPos) == commentFormat) {
+                // No new code block found or it's commented out
+                break;
             }
-            else {
-                setFormat(0, end + 1, altQuoteFormat);
-                indx = end + 1;
-            }
+            // Found a new code block
+            ++nestCount;
+            setFormat(foundPos, 2, neutralFormat);
+            startIndex = foundPos + 2;
         }
-        // else there's an open double quote, about which we know
-    }
-    else if (N == 0 || prevState < SH_DoubleQuoteState || prevState > SH_MixedSingleQuoteState) {
-        if (N > 0)  // there was an unclosed code block
-            indx = 0;
-        // else search for "$(" below
+        // Highlight inside the command substitution
+        startIndex = formatInsideCommand(text, 0, nestCount, openQuotes, isHereDocStart, startIndex);
     }
 
-    while (indx < text.length()) {
-        if (N == 0) {  // search for the first code block (after the previous one is closed)
-            static const QRegularExpression codeBlockStart("\\$\\(");
-            int start = text.indexOf(codeBlockStart, indx);
-            if (start == -1 || format(start) == commentFormat)
-                goto FINISH;
-            else {  // a new code block
-                ++N;
-                indx = start + 2;
-                setFormat(start, 2, neutralFormat);
-            }
-        }
-        indx = formatInsideCommand(text, 0, N, Q, isHereDocStart, indx);
+    if (!openQuotes.isEmpty()) {
+        currentBlockData->insertOpenQuotes(openQuotes);
     }
-
-FINISH:
-    if (!Q.isEmpty())
-        currentBlockData->insertOpenQuotes(Q);
-    if (N > 0) {
-        currentBlockData->insertNestInfo(N);
+    if (nestCount > 0) {
+        currentBlockData->insertNestInfo(nestCount);
+        // If this is a here-doc start, modify state to reflect open code blocks
         if (isHereDocStart) {
-            /* change the state to reflect the number of open code blocks
-               (the open quotes info is considered at highlightBlock())*/
-            curState > 0 ? curState += 2 * (N + 3) : curState -= 2 * (N + 3);  // see isHereDocument()
+            // A domain-specific hack: adjusting state to track # of open blocks
+            // in negative or positive direction
+            (curState > 0) ? curState += 2 * (nestCount + 3) : curState -= 2 * (nestCount + 3);
             setCurrentBlockState(curState);
         }
     }
-    if (N != oldOpenNests || Q != oldOpenQuotes) {  // forced highlighting of the next block is necessary
+
+    // If we changed the nestCount or openQuotes, we may need to re-highlight next block
+    if (nestCount != oldOpenNests || openQuotes != oldOpenQuotes) {
         return true;
     }
-    else
-        return false;
+    return false;
+}
+
+/*!
+ * \brief Helper to close an open quote from a previous block before searching for new code blocks.
+ * \return the index at which we can resume searching for "$(" in the current block.
+ */
+int Highlighter::closeOpenQuoteFromPreviousBlock(const QString& text, int prevState, bool isHereDocStart) {
+    int startIndex = 0;
+    if (prevState == SH_SingleQuoteState || prevState == SH_MixedSingleQuoteState) {
+        int end = text.indexOf(singleQuoteMark);
+        while (isEscapedQuote(text, end, /*isStartQuote=*/false)) {
+            end = text.indexOf(singleQuoteMark, end + 1);
+        }
+        if (end == -1) {
+            setFormat(0, text.length(), altQuoteFormat);
+            if (!isHereDocStart) {
+                setCurrentBlockState(SH_SingleQuoteState);
+            }
+            return text.length();  // entire line is single-quoted
+        }
+        else {
+            setFormat(0, end + 1, altQuoteFormat);
+            startIndex = end + 1;
+        }
+    }
+    // If it’s an open double quote, we do not forcibly close it here.
+    // We handle double-quoted text as we parse along in formatInsideCommand().
+    return startIndex;
 }
 
 }  // namespace FeatherPad
