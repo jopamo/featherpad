@@ -58,6 +58,8 @@ public:
 
     void sortLines (bool reverse = false);
 
+    void rmDupeSort (bool reverse = false);
+
     bool toSoftTabs();
 
     QString getUrl (const int pos) const;

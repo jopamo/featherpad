@@ -129,6 +129,7 @@ private slots:
     void showingEditMenu();
     void hidngEditMenu();
     void sortLines();
+    void rmDupeSort();
     void makeEditable();
     void undoing();
     void redoing();

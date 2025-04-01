@@ -208,6 +208,8 @@
     <addaction name="separator"/>
     <addaction name="actionSortLines"/>
     <addaction name="actionRSortLines"/>
+    <addaction name="ActionRmDupeSort"/>
+    <addaction name="ActionRmDupeRSort"/>
     <addaction name="separator"/>
     <addaction name="actionCheckSpelling"/>
     <addaction name="actionUserDict"/>
@@ -987,6 +989,22 @@
    </property>
    <property name="toolTip">
     <string>Sort Lines Reversely</string>
+   </property>
+  </action>
+  <action name="ActionRmDupeSort">
+   <property name="text">
+    <string>Sort and Remove Duplicates</string>
+   </property>
+   <property name="toolTip">
+    <string>Sort and Remove Duplicates</string>
+   </property>
+  </action>
+  <action name="ActionRmDupeRSort">
+   <property name="text">
+    <string>Reverse Sort and Remove Duplicates</string>
+   </property>
+   <property name="toolTip">
+    <string>Reverse Sort and Remove Duplicates</string>
    </property>
   </action>
   <action name="actionCheckSpelling">

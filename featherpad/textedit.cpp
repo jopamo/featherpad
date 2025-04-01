@@ -2364,69 +2364,133 @@ void TextEdit::showEvent (QShowEvent *event)
         emit updateBracketMatching();
 }
 /*************************/
-void TextEdit::sortLines (bool reverse)
+void TextEdit::sortLines(bool reverse)
 {
-    if (isReadOnly()) return;
-    QTextCursor cursor = textCursor();
-    if (!cursor.selectedText().contains (QChar (QChar::ParagraphSeparator)))
+    if (isReadOnly())
         return;
 
-    int anch = cursor.anchor();
-    int pos = cursor.position();
-    cursor.beginEditBlock();
-    cursor.setPosition (std::min (anch, pos));
-    cursor.movePosition (QTextCursor::StartOfBlock);
-    cursor.setPosition (std::max (anch, pos), QTextCursor::KeepAnchor);
-    cursor.movePosition (QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    QTextCursor cursor = textCursor();
+    // Ensure we actually have multiple lines selected
+    if (!cursor.selectedText().contains(QChar(QChar::ParagraphSeparator)))
+        return;
 
-    QStringList lines = cursor.selectedText().split (QChar (QChar::ParagraphSeparator));
-    /* QStringList::sort() is not aware of the locale */
-    std::sort (lines.begin(), lines.end(), [](const QString &a, const QString &b) {
-        return QString::localeAwareCompare (a, b) < 0;
-    });
-    int n = lines.size();
+    const int anchorPos = cursor.anchor();
+    const int curPos    = cursor.position();
+
+    // Begin block so the whole replace is undoable in one step
+    cursor.beginEditBlock();
+
+    // Expand selection to whole lines
+    cursor.setPosition(std::min(anchorPos, curPos));
+    cursor.movePosition(QTextCursor::StartOfBlock);
+    cursor.setPosition(std::max(anchorPos, curPos), QTextCursor::KeepAnchor);
+    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+
+    // Split into lines
+    QStringList lines = cursor.selectedText().split(QChar(QChar::ParagraphSeparator));
+
+    // Sort lines using locale-aware comparison
+    std::sort(lines.begin(), lines.end(),
+        [](const QString &a, const QString &b) {
+            return QString::localeAwareCompare(a, b) < 0;
+        }
+    );
+
+    // If reverse is true, simply reverse the vector before insertion
     if (reverse)
-    {
-        for (int i = 0; i < n; ++i)
-        {
-            cursor.insertText (lines.at (n - 1 - i));
-            if (i < n - 1)
-                cursor.insertBlock();
+        std::reverse(lines.begin(), lines.end());
+
+    // Replace the selected text with sorted lines
+    cursor.removeSelectedText();
+    for (int i = 0; i < lines.size(); ++i) {
+        cursor.insertText(lines.at(i));
+        if (i < lines.size() - 1)
+            cursor.insertBlock();
+    }
+
+    cursor.endEditBlock();
+}
+
+void TextEdit::rmDupeSort(bool reverse)
+{
+    if (isReadOnly())
+        return;
+
+    QTextCursor cursor = textCursor();
+
+    if (!cursor.selectedText().contains(QChar(QChar::ParagraphSeparator)))
+        return;
+
+    const int anchorPos = cursor.anchor();
+    const int curPos    = cursor.position();
+
+    cursor.beginEditBlock();
+
+    cursor.setPosition(std::min(anchorPos, curPos));
+    cursor.movePosition(QTextCursor::StartOfBlock);
+    cursor.setPosition(std::max(anchorPos, curPos), QTextCursor::KeepAnchor);
+    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+
+    QStringList lines = cursor.selectedText().split(QChar(QChar::ParagraphSeparator));
+
+    std::sort(lines.begin(), lines.end(),
+              [](const QString &a, const QString &b) {
+                  return QString::localeAwareCompare(a, b) < 0;
+              });
+
+    lines.erase(std::unique(lines.begin(), lines.end()), lines.end());
+
+    if (reverse)
+        std::reverse(lines.begin(), lines.end());
+
+
+    cursor.removeSelectedText();
+    for (int i = 0; i < lines.size(); ++i) {
+        cursor.insertText(lines.at(i));
+        if (i < lines.size() - 1) {
+            cursor.insertBlock(); // new line
         }
     }
-    else
-    {
-        for (int i = 0; i < n; ++i)
-        {
-            cursor.insertText (lines.at (i));
-            if (i < n - 1)
-                cursor.insertBlock();
-        }
-    }
+
     cursor.endEditBlock();
 }
 
 /************************************************************
 ***** The following functions are mainly for hyperlinks *****
 *************************************************************/
-
-QString TextEdit::getUrl (const int pos) const
+QString TextEdit::getUrl(const int pos) const
 {
-    static const QRegularExpression urlPattern ("[A-Za-z0-9_\\-]+://((?!&quot;|&gt;|&lt;)[A-Za-z0-9_.+/\\?\\=~&%#,;!@\\*\'\\-:\\(\\)\\[\\]])+(?<!\\.|\\?|!|:|;|,|\\(|\\)|\\[|\\]|\')|([A-Za-z0-9_.\\-]+@[A-Za-z0-9_\\-]+\\.[A-Za-z0-9.]+)(?<!\\.)");
+    // A single QRegularExpression that alternates between:
+    //   - URL (non-capturing)
+    //   - Email (capturing group #2)
+    // If group(2) is non-empty => email => prepend "mailto:"
+    static const QRegularExpression urlOrEmailPattern(
+        QStringLiteral(
+            // 1) URL pattern (no capture):
+            R"((?:[a-z0-9.+-]+)://(?:[^\s:@/]+(?::[^\s:@/]*)?@)?(?:(?:0|25[0-5]|2[0-4]\d|[01]?\d?\d)(?:\.(?:0|25[0-5]|2[0-4]\d|[01]?\d?\d)){3}|\[[0-9A-Fa-f:.]+\]|(?:[a-z0-9-]+\.)+[a-z0-9-]+|localhost)(?::\d{1,5})?(?:[/?#][^\s]*)?)"
+            // 2) OR email pattern (captured in group #2):
+            R"(|((?:[-!#$%&'*+/=?^_`{}|~0-9A-Z]+(?:\.[-!#$%&'*+/=?^_`{}|~0-9A-Z]+)*|"(?:[\001-\010\013\014\016-\037!#-\[\]-\177]|\\[\001-\011\013\014\016-\177])*")@(?:(?:[a-z0-9-]+\.)+[a-z0-9-]+|localhost|\[[0-9A-Fa-f:.]+\])))"
+        ),
+        QRegularExpression::CaseInsensitiveOption
+    );
 
     QString url;
-    QTextBlock block = document()->findBlock (pos);
-    QString text = block.text();
-    if (text.length() <= 30000) // otherwise, too long
+    const QTextBlock block = document()->findBlock(pos);
+    const QString text = block.text();
+    if (text.length() <= 30000) // same safeguard as original
     {
-        int cursorIndex = pos - block.position();
+        const int cursorIndex = pos - block.position();
         QRegularExpressionMatch match;
-        int indx = text.lastIndexOf (urlPattern, cursorIndex, &match);
-        if (indx > -1 && indx + match.capturedLength() > cursorIndex)
+        const int indx = text.lastIndexOf(urlOrEmailPattern, cursorIndex, &match);
+        if (indx > -1 && (indx + match.capturedLength()) > cursorIndex)
         {
-            url = match.captured();
-            if (!match.captured (2).isEmpty()) // handle email
-                url = "mailto:" + url;
+            // Full match
+            url = match.captured(0);
+
+            // If group #2 is non-empty => it's an email => prepend mailto:
+            if (!match.captured(2).isEmpty()) {
+                url = QStringLiteral("mailto:") + url;
+            }
         }
     }
     return url;

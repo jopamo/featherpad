@@ -209,6 +209,9 @@ FPwin::FPwin (QWidget *parent):QMainWindow (parent), dummyWidget (nullptr), ui (
     connect (ui->actionSortLines, &QAction::triggered, this, &FPwin::sortLines);
     connect (ui->actionRSortLines, &QAction::triggered, this, &FPwin::sortLines);
 
+    connect (ui->ActionRmDupeSort, &QAction::triggered, this, &FPwin::rmDupeSort);
+    connect (ui->ActionRmDupeRSort, &QAction::triggered, this, &FPwin::rmDupeSort);
+
     connect (ui->actionEdit, &QAction::triggered, this, &FPwin::makeEditable);
 
     connect (ui->actionSession, &QAction::triggered, this, &FPwin::manageSessions);
@@ -1771,8 +1774,12 @@ void FPwin::editorContextMenu (const QPoint& p)
                 menu->addSeparator();
                 ui->actionSortLines->setEnabled (true);
                 ui->actionRSortLines->setEnabled (true);
+                ui->ActionRmDupeSort->setEnabled (true);
+                ui->ActionRmDupeRSort->setEnabled (true);
                 menu->addAction (ui->actionSortLines);
                 menu->addAction (ui->actionRSortLines);
+                menu->addAction (ui->ActionRmDupeSort);
+                menu->addAction (ui->ActionRmDupeRSort);
             }
             menu->addSeparator();
         }
@@ -3502,6 +3509,8 @@ void FPwin::showingEditMenu()
             {
                 ui->actionSortLines->setEnabled (true);
                 ui->actionRSortLines->setEnabled (true);
+                ui->ActionRmDupeSort->setEnabled (true);
+                ui->ActionRmDupeRSort->setEnabled (true);
                 return;
             }
         }
@@ -3510,8 +3519,10 @@ void FPwin::showingEditMenu()
     }
     else
         ui->actionPaste->setEnabled (false);
-    ui->actionSortLines->setEnabled (false);
-    ui->actionRSortLines->setEnabled (false);
+    	ui->actionSortLines->setEnabled (false);
+    	ui->actionRSortLines->setEnabled (false);
+    	ui->ActionRmDupeSort->setEnabled (false);
+    	ui->ActionRmDupeRSort->setEnabled (false);
 }
 /*************************/
 void FPwin::hidngEditMenu()
@@ -3530,6 +3541,13 @@ void FPwin::sortLines()
     if (TabPage *tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
         tabPage->textEdit()->sortLines (qobject_cast<QAction*>(QObject::sender()) == ui->actionRSortLines);
 }
+
+void FPwin::rmDupeSort()
+{
+    if (TabPage *tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
+        tabPage->textEdit()->rmDupeSort (qobject_cast<QAction*>(QObject::sender()) == ui->ActionRmDupeRSort);
+}
+
 /*************************/
 void FPwin::makeEditable()
 {
@@ -5659,331 +5677,418 @@ void FPwin::autoSave()
     });
 }
 /*************************/
-void FPwin::saveAllFiles (bool showWarning)
+void FPwin::saveAllFiles(bool showWarning)
 {
-    int index = ui->tabWidget->currentIndex();
-    if (index == -1) return;
+    // If there are no tabs, nothing to save.
+    int currentIndex = ui->tabWidget->currentIndex();
+    if (currentIndex == -1)
+        return;
 
-    Config& config = static_cast<FPsingleton*>(qApp)->getConfig();
+    Config &config = static_cast<FPsingleton*>(qApp)->getConfig();
+    bool errorOccurred = false;
 
-    bool error = false;
-    for (int indx = 0; indx < ui->tabWidget->count(); ++indx)
+    for (int i = 0; i < ui->tabWidget->count(); ++i)
     {
-        TabPage *thisTabPage = qobject_cast< TabPage *>(ui->tabWidget->widget (indx));
-        TextEdit *thisTextEdit = thisTabPage->textEdit();
-        if (thisTextEdit->isUneditable() || !thisTextEdit->document()->isModified())
+        // Get each tab page and text editor
+        TabPage *tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(i));
+        TextEdit *textEdit = tabPage->textEdit();
+        if (!textEdit)
+            continue; // Just in case of an unexpected cast failure
+
+        // Skip if it's uneditable or not modified
+        if (textEdit->isUneditable() || !textEdit->document()->isModified())
             continue;
-        QString fname = thisTextEdit->getFileName();
-        if (fname.isEmpty() || !QFile::exists (fname))
+
+        // If file name is empty or doesn't exist on disk, skip
+        QString fileName = textEdit->getFileName();
+        if (fileName.isEmpty() || !QFile::exists(fileName))
             continue;
-        /* make changes to the document if needed */
-        if (config.getRemoveTrailingSpaces() && thisTextEdit->getProg() != "diff" && fname.section ('/', -1) != "locale.gen")
+
+        // Optionally remove trailing spaces (unless "diff" or "locale.gen")
+        bool removeSpaces = config.getRemoveTrailingSpaces()
+                            && textEdit->getProg() != "diff"
+                            && !fileName.endsWith("/locale.gen");
+        if (removeSpaces)
         {
             makeBusy();
-            bool doubleSpace (thisTextEdit->getProg() == "markdown" || thisTextEdit->getProg() == "fountain");
-            bool singleSpace (thisTextEdit->getProg() == "LaTeX") ;
-            QTextBlock block = thisTextEdit->document()->firstBlock();
-            QTextCursor tmpCur = thisTextEdit->textCursor();
-            tmpCur.beginEditBlock();
-            while (block.isValid())
+            bool doubleSpace  = (textEdit->getProg() == "markdown"
+                                 || textEdit->getProg() == "fountain");
+            bool singleSpace  = (textEdit->getProg() == "LaTeX");
+            QTextCursor tempCursor = textEdit->textCursor();
+            tempCursor.beginEditBlock();
+
+            // Walk through each block, remove trailing spaces
+            for (QTextBlock block = textEdit->document()->firstBlock();
+                 block.isValid();
+                 block = block.next())
             {
-                if (const int num = trailingSpaces (block.text()))
-                {
-                    tmpCur.setPosition (block.position() + block.text().length());
-                    if (doubleSpace)
-                    {
-                        if (num != 2)
-                            tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, std::max (1, num - 2));
+                int numTrailing = trailingSpaces(block.text());
+                if (!numTrailing)
+                    continue;
+
+                tempCursor.setPosition(block.position() + block.text().length());
+
+                if (doubleSpace) {
+                    // Keep exactly 2 trailing spaces
+                    int toRemove = std::max(0, numTrailing - 2);
+                    if (toRemove > 0) {
+                        tempCursor.movePosition(QTextCursor::PreviousCharacter,
+                                                QTextCursor::KeepAnchor,
+                                                toRemove);
                     }
-                    else if (singleSpace)
-                    {
-                        if (num > 1)
-                            tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num - 1);
+                } else if (singleSpace) {
+                    // Keep exactly 1 trailing space
+                    int toRemove = numTrailing - 1;
+                    if (toRemove > 0) {
+                        tempCursor.movePosition(QTextCursor::PreviousCharacter,
+                                                QTextCursor::KeepAnchor,
+                                                toRemove);
                     }
-                    else
-                        tmpCur.movePosition (QTextCursor::PreviousCharacter, QTextCursor::KeepAnchor, num);
-                    tmpCur.removeSelectedText();
+                } else {
+                    // Remove all trailing spaces
+                    tempCursor.movePosition(QTextCursor::PreviousCharacter,
+                                            QTextCursor::KeepAnchor,
+                                            numTrailing);
                 }
-                block = block.next();
+                tempCursor.removeSelectedText();
             }
-            tmpCur.endEditBlock();
+            tempCursor.endEditBlock();
             unbusy();
         }
+
+        // Optionally append an empty line at the end
         if (config.getAppendEmptyLine()
-            && !thisTextEdit->document()->lastBlock().text().isEmpty())
+            && !textEdit->document()->lastBlock().text().isEmpty())
         {
-            QTextCursor tmpCur = thisTextEdit->textCursor();
-            tmpCur.beginEditBlock();
-            tmpCur.movePosition (QTextCursor::End);
-            tmpCur.insertBlock();
-            tmpCur.endEditBlock();
+            QTextCursor endCursor = textEdit->textCursor();
+            endCursor.beginEditBlock();
+            endCursor.movePosition(QTextCursor::End);
+            endCursor.insertBlock(); // adds one blank line at the end
+            endCursor.endEditBlock();
         }
 
-        QTextDocumentWriter writer (fname, "plaintext");
-        if (writer.write (thisTextEdit->document()))
+        // Save the file (plaintext format)
+        QTextDocumentWriter writer(fileName, "plaintext");
+        if (writer.write(textEdit->document()))
         {
-            inactiveTabModified_ = (indx != index);
-            thisTextEdit->document()->setModified (false);
-            QFileInfo fInfo (fname);
-            thisTextEdit->setSize (fInfo.size());
-            thisTextEdit->setLastModified (fInfo.lastModified());
-            setTitle (fname, (!inactiveTabModified_ ? -1 : indx));
-            addRecentFile (fname); // recently saved also means recently opened
-            /* uninstall and reinstall the syntax highlighter if the programming language is changed */
-            QString prevLan = thisTextEdit->getProg();
-            setProgLang (thisTextEdit);
-            if (prevLan != thisTextEdit->getProg())
+            // Mark as saved if this wasn't the active tab
+            inactiveTabModified_ = (i != currentIndex);
+
+            // Clear the modified flag
+            textEdit->document()->setModified(false);
+
+            // Update known file size & time
+            QFileInfo fInfo(fileName);
+            textEdit->setSize(fInfo.size());
+            textEdit->setLastModified(fInfo.lastModified());
+
+            // Update title and recent file list
+            setTitle(fileName, (!inactiveTabModified_ ? -1 : i));
+            addRecentFile(fileName);
+
+            // Possibly reinstall syntax highlighter if the lang changed
+            QString oldLang = textEdit->getProg();
+            setProgLang(textEdit); // might change the recognized "prog" language
+
+            // If the language changed by saving, handle re-highlighting or status bar
+            if (oldLang != textEdit->getProg())
             {
+                // If we show a language selector and do syntax by default:
                 if (config.getShowLangSelector() && config.getSyntaxByDefault())
                 {
-                    if (thisTextEdit->getLang() == thisTextEdit->getProg())
-                        thisTextEdit->setLang (QString()); // not enforced because it's the real syntax
-                    if (!inactiveTabModified_)
-                        updateLangBtn (thisTextEdit);
+                    // If the new recognized language matches 'prog',
+                    // we can unforce the old, user-set language
+                    if (textEdit->getLang() == textEdit->getProg()) {
+                        textEdit->setLang(QString());
+                    }
+                    if (!inactiveTabModified_) {
+                        updateLangBtn(textEdit);
+                    }
                 }
 
+                // If the status bar is visible, we may need to remove
+                // or re-connect the word info signal
                 if (!inactiveTabModified_ && ui->statusBar->isVisible()
-                    && thisTextEdit->getWordNumber() != -1)
-                { // we want to change the statusbar text below
-                    disconnect (thisTextEdit->document(), &QTextDocument::contentsChange, this, &FPwin::updateWordInfo);
+                    && textEdit->getWordNumber() != -1)
+                {
+                    // Temporarily disconnect to avoid partial updates
+                    disconnect(textEdit->document(), &QTextDocument::contentsChange,
+                               this, &FPwin::updateWordInfo);
                 }
 
-                if (thisTextEdit->getLang().isEmpty())
-                { // restart the syntax highlighting only when the language isn't forced
-                    syntaxHighlighting (thisTextEdit, false);
+                // Restart syntax highlighting if language is not forced
+                if (textEdit->getLang().isEmpty())
+                {
+                    syntaxHighlighting(textEdit, false);
                     if (ui->actionSyntax->isChecked())
-                        syntaxHighlighting (thisTextEdit);
+                        syntaxHighlighting(textEdit);
                 }
 
+                // Update the status bar text if visible
                 if (!inactiveTabModified_ && ui->statusBar->isVisible())
-                { // correct the statusbar text just by replacing the old syntax info
-                    QLabel *statusLabel = ui->statusBar->findChild<QLabel *>("statusLabel");
-                    QString str = statusLabel->text();
-                    QString syntaxStr = tr ("Syntax");
-                    int i = str.indexOf (syntaxStr);
-                    if (i == -1) // there was no real language before saving (prevLan was "url")
+                {
+                    QLabel *statusLabel = ui->statusBar->findChild<QLabel*>("statusLabel");
+                    QString text = statusLabel->text();
+                    QString syntaxStr = tr("Syntax");
+
+                    // Insert or remove syntax info from the status bar text
+                    int idxSyntax = text.indexOf(syntaxStr);
+                    if (idxSyntax < 0)
                     {
-                        QString lineStr = "&nbsp;&nbsp;&nbsp;<b>" + tr ("Lines");
-                        int j = str.indexOf (lineStr);
-                        syntaxStr = "&nbsp;&nbsp;&nbsp;<b>" + tr ("Syntax") + QString (":</b> <i>%1</i>")
-                                                                              .arg (thisTextEdit->getProg());
-                        str.insert (j, syntaxStr);
+                        // No syntax info previously: insert it before "Lines"
+                        QString linesMarker = "&nbsp;&nbsp;&nbsp;<b>" + tr("Lines");
+                        int idxLines = text.indexOf(linesMarker);
+                        QString insertStr = "&nbsp;&nbsp;&nbsp;<b>" + tr("Syntax")
+                                            + QString(":</b> <i>%1</i>")
+                                                .arg(textEdit->getProg());
+                        text.insert(idxLines, insertStr);
                     }
                     else
                     {
-                        if (thisTextEdit->getProg() == "url") // there's no real language after saving
+                        if (textEdit->getProg() == "url")
                         {
-                            syntaxStr = "&nbsp;&nbsp;&nbsp;<b>" + tr ("Syntax");
-                            QString lineStr = "&nbsp;&nbsp;&nbsp;<b>" + tr ("Lines");
-                            int j = str.indexOf (syntaxStr);
-                            int k = str.indexOf (lineStr);
-                            str.remove (j, k - j);
+                            // Remove syntax info if there's no real language
+                            QString linesMarker = "&nbsp;&nbsp;&nbsp;<b>" + tr("Lines");
+                            int idxLines = text.indexOf(linesMarker);
+                            text.remove(idxSyntax, idxLines - idxSyntax);
                         }
-                        else // the language is changed by saving
+                        else
                         {
-                            QString lineStr = "</i>&nbsp;&nbsp;&nbsp;<b>" + tr ("Lines");
-                            int j = str.indexOf (lineStr);
-                            int offset = syntaxStr.size() + 9; // size of ":</b> <i>"
-                            str.replace (i + offset, j - i - offset, thisTextEdit->getProg());
+                            // Replace the old syntax text with the new one
+                            QString linesStr = "</i>&nbsp;&nbsp;&nbsp;<b>" + tr("Lines");
+                            int idxLines = text.indexOf(linesStr);
+                            // skip "Syntax" + ":</b> <i>"
+                            int offset = syntaxStr.size() + 9;
+                            text.replace(idxSyntax + offset,
+                                         idxLines - (idxSyntax + offset),
+                                         textEdit->getProg());
                         }
                     }
-                    statusLabel->setText (str);
-                    if (thisTextEdit->getWordNumber() != -1)
-                        connect (thisTextEdit->document(), &QTextDocument::contentsChange, this, &FPwin::updateWordInfo);
+                    statusLabel->setText(text);
+
+                    // Restore the word info connection if needed
+                    if (textEdit->getWordNumber() != -1) {
+                        connect(textEdit->document(), &QTextDocument::contentsChange,
+                                this, &FPwin::updateWordInfo);
+                    }
                 }
             }
             inactiveTabModified_ = false;
         }
-        else error = true;
+        else {
+            errorOccurred = true;
+        }
     }
-    if (showWarning && error)
-        showWarningBar ("<center><b><big>" + tr ("Some files cannot be saved!") + "</big></b></center>");
+
+    if (showWarning && errorOccurred) {
+        showWarningBar("<center><b><big>"
+                       + tr("Some files cannot be saved!")
+                       + "</big></b></center>");
+    }
 }
 /*************************/
 void FPwin::aboutDialog()
 {
-    if (isLoading()) return;
+    if (isLoading() || hasAnotherDialog())
+        return;
 
-    if (hasAnotherDialog()) return;
-    updateShortcuts (true);
+    updateShortcuts(true);
 
-    class AboutDialog : public QDialog {
+    class AboutDialog : public QDialog
+    {
     public:
-        explicit AboutDialog (QWidget* parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags()) : QDialog (parent, f) {
-            aboutUi.setupUi (this);
-            aboutUi.textLabel->setOpenExternalLinks (true);
+        explicit AboutDialog(QWidget* parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags())
+            : QDialog(parent, f)
+        {
+            aboutUi.setupUi(this);
+            aboutUi.textLabel->setOpenExternalLinks(true);
         }
-        void setTabTexts (const QString& first, const QString& sec) {
-            aboutUi.tabWidget->setTabText (0, first);
-            aboutUi.tabWidget->setTabText (1, sec);
+
+        void setTabTexts(const QString& first, const QString& second)
+        {
+            aboutUi.tabWidget->setTabText(0, first);
+            aboutUi.tabWidget->setTabText(1, second);
         }
-        void setMainIcon (const QIcon& icn) {
-            aboutUi.iconLabel->setPixmap (icn.pixmap (64, 64));
+
+        void setMainIcon(const QIcon& icon)
+        {
+            aboutUi.iconLabel->setPixmap(icon.pixmap(64, 64));
         }
-        void settMainTitle (const QString& title) {
-            aboutUi.titleLabel->setText (title);
+
+        void setMainTitle(const QString& title)
+        {
+            aboutUi.titleLabel->setText(title);
         }
-        void setMainText (const QString& txt) {
-            aboutUi.textLabel->setText (txt);
+
+        void setMainText(const QString& text)
+        {
+            aboutUi.textLabel->setText(text);
         }
+
     private:
         Ui::AboutDialog aboutUi;
     };
 
-    AboutDialog dialog (this);
-    dialog.setMainIcon (QIcon::fromTheme ("featherpad", QIcon (":icons/featherpad.svg")));
-    dialog.settMainTitle (QString ("<center><b><big>%1 %2</big></b></center><br>").arg (qApp->applicationName(), qApp->applicationVersion()));
-    dialog.setMainText ("<center> " + tr ("A lightweight, tabbed, plain-text editor") + " </center>\n<center> "
-                        + tr ("based on Qt") + " </center><br><center> "
-                        + tr ("Author")+": <a href='mailto:tsujan2000@gmail.com?Subject=My%20Subject'>Pedram Pourang ("
-                        + tr ("aka.") + " Tsu Jan)</a> </center><p></p>");
-    dialog.setTabTexts (tr ("About FeatherPad"), tr ("Translators"));
-    dialog.setWindowTitle (tr ("About FeatherPad"));
-    dialog.setWindowModality (Qt::WindowModal);
+    AboutDialog dialog(this);
+
+    dialog.setMainIcon(QIcon::fromTheme(
+        QStringLiteral("featherpad"),
+        QIcon(QStringLiteral(":icons/featherpad.svg"))));
+
+    const QString titleHtml = QStringLiteral("<center><b><big>%1 %2</big></b></center><br>")
+        .arg(qApp->applicationName(), qApp->applicationVersion());
+    dialog.setMainTitle(titleHtml);
+
+    const QString mainText = QStringLiteral(
+        "<center>%1</center>\n"
+        "<center>%2</center><br>"
+        "<center>%3: <a href='mailto:tsujan2000@gmail.com?Subject=My%%20Subject'>"
+        "Pedram Pourang (%4 Tsu Jan)</a></center><p></p>")
+        .arg(tr("A lightweight, tabbed, plain-text editor"),
+             tr("based on Qt"),
+             tr("Author"),
+             tr("aka."));
+    dialog.setMainText(mainText);
+
+    dialog.setTabTexts(tr("About FeatherPad"), tr("Translators"));
+    dialog.setWindowTitle(tr("About FeatherPad"));
+    dialog.setWindowModality(Qt::WindowModal);
+
     dialog.exec();
-    updateShortcuts (false);
+    updateShortcuts(false);
 }
 /*************************/
 void FPwin::helpDoc()
 {
-    int index = ui->tabWidget->currentIndex();
-    if (index == -1)
+    // If there are no open tabs, open a new one first
+    if (ui->tabWidget->currentIndex() == -1)
         newTab();
-    else
+
+    // Check if an existing empty tab can be reused:
+    for (int i = 0; i < ui->tabWidget->count(); ++i)
     {
-        for (int i = 0; i < ui->tabWidget->count(); ++i)
+        auto thisTabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(i));
+        auto thisTextEdit = thisTabPage->textEdit();
+        if (thisTextEdit->getFileName().isEmpty()
+            && !thisTextEdit->document()->isModified()
+            && !thisTextEdit->document()->isEmpty())
         {
-            TabPage *thisTabPage = qobject_cast< TabPage *>(ui->tabWidget->widget (i));
-            TextEdit *thisTextEdit = thisTabPage->textEdit();
-            if (thisTextEdit->getFileName().isEmpty()
-                && !thisTextEdit->document()->isModified()
-                && !thisTextEdit->document()->isEmpty())
+            // Select that tab if side pane is active; otherwise just set current
+            if (sidePane_ && !sideItems_.isEmpty())
             {
-                if (sidePane_ && !sideItems_.isEmpty())
-                {
-                    if (QListWidgetItem *wi = sideItems_.key (thisTabPage))
-                        sidePane_->listWidget()->setCurrentItem (wi); // sets the current widget at changeTab()
-                }
-                else
-                    ui->tabWidget->setCurrentWidget (thisTabPage);
-                return;
+                if (QListWidgetItem* wi = sideItems_.key(thisTabPage))
+                    sidePane_->listWidget()->setCurrentItem(wi); // triggers changeTab()
             }
+            else
+                ui->tabWidget->setCurrentWidget(thisTabPage);
+            return;
         }
     }
 
-    /* see if a translated help file exists */
-    /*QString lang;
-    QStringList langs (QLocale::system().uiLanguages());
-    if (!langs.isEmpty())
-        lang = langs.first().replace ('-', '_');
-
-#if defined (Q_OS_HAIKU)
-    QString helpPath (QStringLiteral (DATADIR) + "/help_" + lang);
-#elif defined (Q_OS_MAC)
-    QString helpPath (qApp->applicationDirPath() + QStringLiteral ("/../Resources/") + "/help_" + lang);
-#else
-    QString helpPath (QStringLiteral (DATADIR) + "/featherpad/help_" + lang);
-#endif
-
-    if (!QFile::exists (helpPath) && !langs.isEmpty())
-    {
-        lang = langs.first().split (QLatin1Char ('_')).first();
 #if defined(Q_OS_HAIKU)
-        helpPath = QStringLiteral (DATADIR) + "/help_" + lang;
+    QString helpPath = QStringLiteral(DATADIR) + "/help";
 #elif defined(Q_OS_MAC)
-        helpPath = qApp->applicationDirPath() + QStringLiteral ("/../Resources/") + "/help_" + lang;
+    QString helpPath = qApp->applicationDirPath() + QStringLiteral("/../Resources/") + "/help";
 #else
-        helpPath = QStringLiteral (DATADIR) + "/featherpad/help_" + lang;
+    QString helpPath = QStringLiteral(DATADIR) + "/featherpad/help";
 #endif
-    }
 
-    if (!QFile::exists (helpPath))
-    {*/
-#if defined(Q_OS_HAIKU)
-        QString helpPath =  QStringLiteral (DATADIR) + "/help";
-#elif defined(Q_OS_MAC)
-        QString helpPath = qApp->applicationDirPath() + QStringLiteral ("/../Resources/") + "/help";
-#else
-        QString helpPath =  QStringLiteral (DATADIR) + "/featherpad/help";
-#endif
-    //}
+    QFile helpFile(helpPath);
+    if (!helpFile.exists() || !helpFile.open(QFile::ReadOnly))
+        return;
 
-    QFile helpFile (helpPath);
-    if (!helpFile.exists()) return;
-    if (!helpFile.open (QFile::ReadOnly)) return;
-
-    TextEdit *textEdit = qobject_cast<TabPage*>(ui->tabWidget->currentWidget())->textEdit();
+    // If the current tab is non-empty, open a new empty one for help
+    auto currentTab = qobject_cast<TabPage*>(ui->tabWidget->currentWidget());
+    auto textEdit = currentTab->textEdit();
     if (!textEdit->document()->isEmpty()
         || textEdit->document()->isModified()
-        || !textEdit->getFileName().isEmpty()) // an empty file is just opened
+        || !textEdit->getFileName().isEmpty())
     {
-        createEmptyTab (!isLoading(), false);
-        textEdit = qobject_cast<TabPage*>(ui->tabWidget->currentWidget())->textEdit();
+        createEmptyTab(!isLoading(), false);
+        currentTab = qobject_cast<TabPage*>(ui->tabWidget->currentWidget());
+        textEdit = currentTab->textEdit();
     }
     else if (textEdit->getHighlighter())
-        syntaxHighlighting (textEdit, false);
-
-    if (!textEdit->getLang().isEmpty())
-    { // remove the enforced syntax, if any
-        textEdit->setLang (QString());
-        updateLangBtn (textEdit);
+    {
+        // Remove syntax highlighting if we have any
+        syntaxHighlighting(textEdit, false);
     }
 
-    QByteArray data = helpFile.readAll();
+    // Reset enforced syntax if necessary
+    if (!textEdit->getLang().isEmpty())
+    {
+        textEdit->setLang(QString());
+        updateLangBtn(textEdit);
+    }
+
+    // Read help content
+    const QByteArray data = helpFile.readAll();
     helpFile.close();
-    auto decoder = QStringDecoder (QStringDecoder::Utf8);
-    QString str = decoder.decode (data);
-    textEdit->setPlainText (str);
 
-    textEdit->setReadOnly (true);
-    if (!textEdit->hasDarkScheme())
-        textEdit->viewport()->setStyleSheet (".QWidget {"
-                                             "color: black;"
-                                             "background-color: rgb(225, 238, 255);}");
-    else
-        textEdit->viewport()->setStyleSheet (".QWidget {"
-                                             "color: white;"
-                                             "background-color: rgb(0, 60, 110);}");
-    ui->actionCut->setDisabled (true);
-    ui->actionPaste->setDisabled (true);
-    ui->actionSoftTab->setDisabled (true);
-    ui->actionDate->setDisabled (true);
-    ui->actionDelete->setDisabled (true);
-    ui->actionUpperCase->setDisabled (true);
-    ui->actionLowerCase->setDisabled (true);
-    ui->actionStartCase->setDisabled (true);
-    disconnect (textEdit, &TextEdit::canCopy, ui->actionCut, &QAction::setEnabled);
-    disconnect (textEdit, &TextEdit::canCopy, ui->actionDelete, &QAction::setEnabled);
-    disconnect (textEdit, &QPlainTextEdit::copyAvailable, ui->actionUpperCase, &QAction::setEnabled);
-    disconnect (textEdit, &QPlainTextEdit::copyAvailable, ui->actionLowerCase, &QAction::setEnabled);
-    disconnect (textEdit, &QPlainTextEdit::copyAvailable, ui->actionStartCase, &QAction::setEnabled);
+    // Decode as UTF-8 and display
+    auto decoder = QStringDecoder(QStringDecoder::Utf8);
+    const QString helpText = decoder.decode(data);
+    textEdit->setPlainText(helpText);
+    textEdit->setReadOnly(true);
 
-    index = ui->tabWidget->currentIndex();
-    textEdit->setEncoding ("UTF-8");
-    textEdit->setWordNumber (-1);
-    textEdit->setProg ("help"); // just for marking
+    // Adjust background colors if using a dark scheme
+    const QString darkStyle = QStringLiteral(
+        ".QWidget { color: white; background-color: rgb(0, 60, 110); }");
+    const QString lightStyle = QStringLiteral(
+        ".QWidget { color: black; background-color: rgb(225, 238, 255); }");
+    textEdit->viewport()->setStyleSheet(textEdit->hasDarkScheme() ? darkStyle : lightStyle);
+
+    // Disable editing actions on the help tab
+    ui->actionCut->setDisabled(true);
+    ui->actionPaste->setDisabled(true);
+    ui->actionSoftTab->setDisabled(true);
+    ui->actionDate->setDisabled(true);
+    ui->actionDelete->setDisabled(true);
+    ui->actionUpperCase->setDisabled(true);
+    ui->actionLowerCase->setDisabled(true);
+    ui->actionStartCase->setDisabled(true);
+
+    // Disconnect copy-related signals that would re-enable the above actions
+    disconnect(textEdit, &TextEdit::canCopy, ui->actionCut, &QAction::setEnabled);
+    disconnect(textEdit, &TextEdit::canCopy, ui->actionDelete, &QAction::setEnabled);
+    disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionUpperCase, &QAction::setEnabled);
+    disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionLowerCase, &QAction::setEnabled);
+    disconnect(textEdit, &QPlainTextEdit::copyAvailable, ui->actionStartCase, &QAction::setEnabled);
+
+    // Final tab/window housekeeping
+    const int index = ui->tabWidget->currentIndex();
+    textEdit->setEncoding(QStringLiteral("UTF-8"));
+    textEdit->setWordNumber(-1);
+    textEdit->setProg(QStringLiteral("help")); // just a marker
+
+    // Update status bar & tab info
     if (ui->statusBar->isVisible())
     {
-        statusMsgWithLineCount (textEdit->document()->blockCount());
-        if (QToolButton *wordButton = ui->statusBar->findChild<QToolButton *>("wordButton"))
-            wordButton->setVisible (true);
+        statusMsgWithLineCount(textEdit->document()->blockCount());
+        if (auto wordButton = ui->statusBar->findChild<QToolButton*>("wordButton"))
+            wordButton->setVisible(true);
     }
-    if (QToolButton *langButton = ui->statusBar->findChild<QToolButton *>("langButton"))
-        langButton->setEnabled (false);
-    encodingToCheck ("UTF-8");
-    QString title = "** " + tr ("Help") + " **";
-    ui->tabWidget->setTabText (index, title);
-    setWindowTitle (title + "[*]");
+    if (auto langButton = ui->statusBar->findChild<QToolButton*>("langButton"))
+        langButton->setEnabled(false);
+
+    encodingToCheck(QStringLiteral("UTF-8"));
+
+    QString title = QStringLiteral("** %1 **").arg(tr("Help"));
+    ui->tabWidget->setTabText(index, title);
+    setWindowTitle(title + QStringLiteral("[*]"));
     if (auto mbt = qobject_cast<MenuBarTitle*>(ui->menuBar->cornerWidget()))
-        mbt->setTitle (title);
-    setWindowModified (false);
-    ui->tabWidget->setTabToolTip (index, title);
+        mbt->setTitle(title);
+
+    setWindowModified(false);
+    ui->tabWidget->setTabToolTip(index, title);
+
+    // If there's a side pane, update its label for this tab
     if (sidePane_)
     {
-        if (QListWidgetItem *cur = sidePane_->listWidget()->currentItem())
+        if (auto cur = sidePane_->listWidget()->currentItem())
         {
-            cur->setText (title);
-            cur->setToolTip (title);
+            cur->setText(title);
+            cur->setToolTip(title);
         }
     }
 }
