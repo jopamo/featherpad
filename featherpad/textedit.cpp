@@ -2137,6 +2137,10 @@ void TextEdit::rmDupeSort(bool reverse) {
 
     QStringList lines = cursor.selectedText().split(QChar(QChar::ParagraphSeparator));
 
+    // Trim each line before sorting
+    for (QString& line : lines)
+        line = line.trimmed();
+
     std::sort(lines.begin(), lines.end(),
               [](const QString& a, const QString& b) { return QString::localeAwareCompare(a, b) < 0; });
 
@@ -2149,7 +2153,7 @@ void TextEdit::rmDupeSort(bool reverse) {
     for (int i = 0; i < lines.size(); ++i) {
         cursor.insertText(lines.at(i));
         if (i < lines.size() - 1) {
-            cursor.insertBlock();  // new line
+            cursor.insertBlock();
         }
     }
 
