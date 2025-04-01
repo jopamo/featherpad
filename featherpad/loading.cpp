@@ -24,39 +24,38 @@
 
 namespace FeatherPad {
 
-Loading::Loading (const QString& fname, const QString& charset, bool reload,
-                  int restoreCursor, int posInLine,
-                  bool forceUneditable, bool multiple) :
-    fname_ (fname),
-    charset_ (charset),
-    reload_ (reload),
-    restoreCursor_ (restoreCursor),
-    posInLine_ (posInLine),
-    forceUneditable_ (forceUneditable),
-    multiple_ (multiple),
-    skipNonText_ (true)
-{}
+Loading::Loading(const QString& fname,
+                 const QString& charset,
+                 bool reload,
+                 int restoreCursor,
+                 int posInLine,
+                 bool forceUneditable,
+                 bool multiple)
+    : fname_(fname),
+      charset_(charset),
+      reload_(reload),
+      restoreCursor_(restoreCursor),
+      posInLine_(posInLine),
+      forceUneditable_(forceUneditable),
+      multiple_(multiple),
+      skipNonText_(true) {}
 /*************************/
 Loading::~Loading() {}
 /*************************/
-void Loading::run()
-{
-    if (!QFile::exists (fname_))
-    {
-        emit completed (QString(), fname_,
-                        charset_.isEmpty() ? "UTF-8" : charset_,
-                        false, false, 0, 0, false, multiple_);
+void Loading::run() {
+    if (!QFile::exists(fname_)) {
+        emit completed(QString(), fname_, charset_.isEmpty() ? "UTF-8" : charset_, false, false, 0, 0, false,
+                       multiple_);
         return;
     }
 
-    QFile file (fname_);
-    if (file.size() > 100*1024*1024) // don't open files with sizes > 100 Mib
+    QFile file(fname_);
+    if (file.size() > 100 * 1024 * 1024)  // don't open files with sizes > 100 Mib
     {
-        emit completed (QString(), fname_);
+        emit completed(QString(), fname_);
         return;
     }
-    if (!file.open (QFile::ReadOnly))
-    {
+    if (!file.open(QFile::ReadOnly)) {
         emit completed();
         return;
     }
@@ -67,64 +66,57 @@ void Loading::run()
     bool hasNull = false;
     QByteArray data;
     char c;
-    qint64 charSize = sizeof (char); // 1
+    qint64 charSize = sizeof(char);  // 1
     int num = 0;
-    if (enforced)
-    { // no need to check for the null character here
-        while (file.read (&c, charSize) > 0)
-        {
+    if (enforced) {  // no need to check for the null character here
+        while (file.read(&c, charSize) > 0) {
             if (c == '\n' || c == '\r')
                 num = 0;
-            if (num < 500004) // a multiple of 4 (for UTF-16/32)
-                data.append (c);
+            if (num < 500004)  // a multiple of 4 (for UTF-16/32)
+                data.append(c);
             else
                 forceUneditable_ = true;
             ++num;
         }
     }
-    else
-    {
+    else {
         unsigned char C[4];
         /* checking 4 bytes is enough to guess
            whether the encoding is UTF-16 or UTF-32 */
-        while (num < 4 && file.read (&c, charSize) > 0)
-        {
-            data.append (c);
+        while (num < 4 && file.read(&c, charSize) > 0) {
+            data.append(c);
             if (c == '\0')
                 hasNull = true;
             C[num] = static_cast<unsigned char>(c);
-            ++ num;
+            ++num;
         }
         if (num == 2 && ((C[0] != '\0' && C[1] == '\0') || (C[0] == '\0' && C[1] != '\0')))
-            charset_ = "UTF-16"; // single character
-        else if (num == 4)
-        {
-            bool readMore (true);
-            if (hasNull)
-            {
-                if ((C[0] == 0xFF && C[1] == 0xFE && C[2] != '\0' && C[3] == '\0') // le
-                    || (C[0] == 0xFE && C[1] == 0xFF && C[2] == '\0' && C[3] != '\0') // be
-                    || (C[0] != '\0' && C[1] == '\0' && C[2] != '\0' && C[3] == '\0') // le
-                    || (C[0] == '\0' && C[1] != '\0' && C[2] == '\0' && C[3] != '\0')) // be
+            charset_ = "UTF-16";  // single character
+        else if (num == 4) {
+            bool readMore(true);
+            if (hasNull) {
+                if ((C[0] == 0xFF && C[1] == 0xFE && C[2] != '\0' && C[3] == '\0')      // le
+                    || (C[0] == 0xFE && C[1] == 0xFF && C[2] == '\0' && C[3] != '\0')   // be
+                    || (C[0] != '\0' && C[1] == '\0' && C[2] != '\0' && C[3] == '\0')   // le
+                    || (C[0] == '\0' && C[1] != '\0' && C[2] == '\0' && C[3] != '\0'))  // be
                 {
                     charset_ = "UTF-16";
                 }
                 /*else if ((C[0] == 0xFF && C[1] == 0xFE && C[2] == '\0' && C[3] == '\0')
                           || (C[0] == '\0' && C[1] == '\0' && C[2] == 0xFE && C[3] == 0xFF))*/
-                else if ((C[0] != '\0' && C[1] != '\0' && C[2] == '\0' && C[3] == '\0') // le
-                         || (C[0] == '\0' && C[1] == '\0' && C[2] != '\0' && C[3] != '\0')) // be
+                else if ((C[0] != '\0' && C[1] != '\0' && C[2] == '\0' && C[3] == '\0')      // le
+                         || (C[0] == '\0' && C[1] == '\0' && C[2] != '\0' && C[3] != '\0'))  // be
                 {
                     charset_ = "UTF-32";
                 }
             }
-            else if ((C[0] == 0xFF && C[1] == 0xFE) || (C[0] == 0xFE && C[1] == 0xFF))
-            { // check special cases of UTF-16
-                while (num < 8 && file.read (&c, charSize) > 0)
-                {
-                    data.append (c);
+            else if ((C[0] == 0xFF && C[1] == 0xFE) ||
+                     (C[0] == 0xFE && C[1] == 0xFF)) {  // check special cases of UTF-16
+                while (num < 8 && file.read(&c, charSize) > 0) {
+                    data.append(c);
                     if (c == '\0')
                         hasNull = true;
-                    ++ num;
+                    ++num;
                 }
                 if (hasNull && (num == 6 || num == 8))
                     charset_ = "UTF-16";
@@ -132,22 +124,17 @@ void Loading::run()
                     readMore = false;
             }
 
-            if (readMore)
-            {
+            if (readMore) {
                 /* reading may still be possible */
-                if (charset_.isEmpty() && !hasNull)
-                {
-                    ++ num; // 4 or 8 characters are already read
-                    while (file.read (&c, charSize) > 0)
-                    {
-                        if (c == '\0')
-                        {
-                            if (!hasNull)
-                            {
-                                if (skipNonText_)
-                                {
+                if (charset_.isEmpty() && !hasNull) {
+                    ++num;  // 4 or 8 characters are already read
+                    while (file.read(&c, charSize) > 0) {
+                        if (c == '\0') {
+                            if (!hasNull) {
+                                if (skipNonText_) {
                                     file.close();
-                                    emit completed (QString(), QString(), "UTF-8"); // shows that a non-text file is skipped
+                                    emit completed(QString(), QString(),
+                                                   "UTF-8");  // shows that a non-text file is skipped
                                     return;
                                 }
                                 hasNull = true;
@@ -156,30 +143,26 @@ void Loading::run()
                         else if (c == '\n' || c == '\r')
                             num = 0;
                         if (num <= 500000)
-                            data.append (c);
-                        else if (num == 500001)
-                        {
-                            data += QByteArray ("    HUGE LINE TRUNCATED: NO LINE WITH MORE THAN 500000 CHARACTERS");
+                            data.append(c);
+                        else if (num == 500001) {
+                            data += QByteArray("    HUGE LINE TRUNCATED: NO LINE WITH MORE THAN 500000 CHARACTERS");
                             forceUneditable_ = true;
                         }
                         ++num;
                     }
                 }
-                else
-                { // the meaning of null characters was determined before
-                    if (skipNonText_ && hasNull && charset_.isEmpty())
-                    {
+                else {  // the meaning of null characters was determined before
+                    if (skipNonText_ && hasNull && charset_.isEmpty()) {
                         file.close();
-                        emit completed (QString(), QString(), "UTF-8");
+                        emit completed(QString(), QString(), "UTF-8");
                         return;
                     }
                     num = 0;
-                    while (file.read (&c, charSize) > 0)
-                    {
+                    while (file.read(&c, charSize) > 0) {
                         if (c == '\n' || c == '\r')
                             num = 0;
-                        if (num < 500004) // a multiple of 4 (for UTF-16/32)
-                            data.append (c);
+                        if (num < 500004)  // a multiple of 4 (for UTF-16/32)
+                            data.append(c);
                         else
                             forceUneditable_ = true;
                         ++num;
@@ -189,39 +172,28 @@ void Loading::run()
         }
     }
     file.close();
-    if (skipNonText_ && hasNull && charset_.isEmpty())
-    {
-        emit completed (QString(), QString(), "UTF-8");
+    if (skipNonText_ && hasNull && charset_.isEmpty()) {
+        emit completed(QString(), QString(), "UTF-8");
         return;
     }
 
-    if (charset_.isEmpty())
-    {
-        if (hasNull)
-        {
+    if (charset_.isEmpty()) {
+        if (hasNull) {
             forceUneditable_ = true;
-            charset_ = "UTF-8"; // always open non-text files as UTF-8
+            charset_ = "UTF-8";  // always open non-text files as UTF-8
         }
         else
-            charset_ = detectCharset (data);
+            charset_ = detectCharset(data);
     }
 
     /* Legacy encodings aren't supported by Qt >= Qt6. */
-    auto decoder = QStringDecoder (charset_ == "UTF-8"  ? QStringConverter::Utf8 :
-                                   charset_ == "UTF-16" ? QStringConverter::Utf16 :
-                                   charset_ == "UTF-32" ? QStringConverter::Utf32 :
-                                                          QStringConverter::Latin1);
-    QString text = decoder.decode (data);
+    auto decoder = QStringDecoder(charset_ == "UTF-8"    ? QStringConverter::Utf8
+                                  : charset_ == "UTF-16" ? QStringConverter::Utf16
+                                  : charset_ == "UTF-32" ? QStringConverter::Utf32
+                                                         : QStringConverter::Latin1);
+    QString text = decoder.decode(data);
 
-    emit completed (text,
-                    fname_,
-                    charset_,
-                    enforced,
-                    reload_,
-                    restoreCursor_,
-                    posInLine_,
-                    forceUneditable_,
-                    multiple_);
+    emit completed(text, fname_, charset_, enforced, reload_, restoreCursor_, posInLine_, forceUneditable_, multiple_);
 }
 
-}
+}  // namespace FeatherPad

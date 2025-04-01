@@ -26,31 +26,26 @@
 
 namespace FeatherPad {
 
-class MenuBarTitle : public QLabel
-{
+class MenuBarTitle : public QLabel {
     Q_OBJECT
 
-public:
-    MenuBarTitle (QWidget *parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags());
+   public:
+    MenuBarTitle(QWidget* parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags());
 
-    void setTitle (const QString &title);
+    void setTitle(const QString& title);
 
-    void setStart (int s) {
-        start_ = s;
-    }
-    void setHeight (int h) {
-        height_ = h;
-    }
+    void setStart(int s) { start_ = s; }
+    void setHeight(int h) { height_ = h; }
 
-signals:
+   signals:
     void doubleClicked();
 
-protected:
-    void paintEvent (QPaintEvent *event) override;
-    void mouseDoubleClickEvent (QMouseEvent *event) override;
+   protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     QSize sizeHint() const override;
 
-private:
+   private:
     QString elidedText_;
     QString lastText_;
     int lastWidth_;
@@ -58,6 +53,6 @@ private:
     int height_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // MENUBARTITLE_H
+#endif  // MENUBARTITLE_H

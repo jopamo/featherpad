@@ -29,83 +29,80 @@
 namespace FeatherPad {
 
 /* For having control over sorting. */
-class ListWidgetItem : public QListWidgetItem
-{
-public:
-    ListWidgetItem (const QIcon &icon, const QString &text, QListWidget *parent = nullptr, int type = QListWidgetItem::Type) :
-        QListWidgetItem (icon, text, parent, type) {
-        collator_.setNumericMode (true);
+class ListWidgetItem : public QListWidgetItem {
+   public:
+    ListWidgetItem(const QIcon& icon,
+                   const QString& text,
+                   QListWidget* parent = nullptr,
+                   int type = QListWidgetItem::Type)
+        : QListWidgetItem(icon, text, parent, type) {
+        collator_.setNumericMode(true);
     }
-    ListWidgetItem (const QString &text, QListWidget *parent = nullptr, int type = QListWidgetItem::Type) :
-        QListWidgetItem (text, parent, type) {
-        collator_.setNumericMode (true);
+    ListWidgetItem(const QString& text, QListWidget* parent = nullptr, int type = QListWidgetItem::Type)
+        : QListWidgetItem(text, parent, type) {
+        collator_.setNumericMode(true);
     }
 
-    bool operator<(const QListWidgetItem &other) const override;
+    bool operator<(const QListWidgetItem& other) const override;
 
-private:
+   private:
     QCollator collator_;
 };
 
-class ListWidget : public QListWidget
-{
+class ListWidget : public QListWidget {
     Q_OBJECT
-public:
-    ListWidget (QWidget *parent = nullptr);
+   public:
+    ListWidget(QWidget* parent = nullptr);
 
-    QListWidgetItem *getItemFromIndex (const QModelIndex &index) const;
+    QListWidgetItem* getItemFromIndex(const QModelIndex& index) const;
 
     void scrollToCurrentItem();
 
-    void lockListWidget (bool lock) {
-        locked_ = lock;
-    }
+    void lockListWidget(bool lock) { locked_ = lock; }
 
-signals:
-    void closeItem (QListWidgetItem *item);
+   signals:
+    void closeItem(QListWidgetItem* item);
     void closeSidePane();
-    void currentItemUpdated (QListWidgetItem *current);
-    void rowsAreInserted (int start, int end);
+    void currentItemUpdated(QListWidgetItem* current);
+    void rowsAreInserted(int start, int end);
 
-protected:
-    QItemSelectionModel::SelectionFlags selectionCommand (const QModelIndex &index, const QEvent *event = nullptr) const override;
-    void mousePressEvent (QMouseEvent *event) override;
-    void mouseMoveEvent (QMouseEvent *event) override; // for instant tooltips
+   protected:
+    QItemSelectionModel::SelectionFlags selectionCommand(const QModelIndex& index,
+                                                         const QEvent* event = nullptr) const override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;  // for instant tooltips
 
-protected slots:
-    void rowsInserted (const QModelIndex &parent, int start, int end) override;
+   protected slots:
+    void rowsInserted(const QModelIndex& parent, int start, int end) override;
 
-private:
+   private:
     bool locked_;
 };
 
-class SidePane : public QWidget
-{
+class SidePane : public QWidget {
     Q_OBJECT
-public:
-    SidePane (QWidget *parent = nullptr);
+   public:
+    SidePane(QWidget* parent = nullptr);
     ~SidePane();
 
-    ListWidget* listWidget() const {
-        return lw_;
-    }
+    ListWidget* listWidget() const { return lw_; }
 
-    void lockPane (bool lock);
+    void lockPane(bool lock);
 
-protected:
-    bool eventFilter (QObject *watched, QEvent *event);
+   protected:
+    bool eventFilter(QObject* watched, QEvent* event);
 
-private slots:
-    void filter (const QString&);
+   private slots:
+    void filter(const QString&);
     void reallyApplyFilter();
-    void onRowsInserted (int start, int end);
+    void onRowsInserted(int start, int end);
 
-private:
-    ListWidget *lw_;
-    LineEdit *le_;
-    QTimer *filterTimer_;
+   private:
+    ListWidget* lw_;
+    LineEdit* le_;
+    QTimer* filterTimer_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SIDEPANE_H
+#endif  // SIDEPANE_H

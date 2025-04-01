@@ -30,31 +30,27 @@ namespace Ui {
 class SpellDialog;
 }
 
-class SpellDialog : public QDialog
-{
+class SpellDialog : public QDialog {
     Q_OBJECT
 
-public:
-    enum SpellAction {CorrectOnce, IgnoreOnce, CorrectAll, IgnoreAll, AddToDict};
+   public:
+    enum SpellAction { CorrectOnce, IgnoreOnce, CorrectAll, IgnoreAll, AddToDict };
 
-    explicit SpellDialog (SpellChecker *spellChecker, const QString &word,
-                          bool correction, QWidget *parent = nullptr);
+    explicit SpellDialog(SpellChecker* spellChecker, const QString& word, bool correction, QWidget* parent = nullptr);
     ~SpellDialog();
 
-    SpellChecker * spellChecker() const {
-        return spellChecker_;
-    }
+    SpellChecker* spellChecker() const { return spellChecker_; }
     QString replacement() const;
-    void checkWord(const QString &word);
+    void checkWord(const QString& word);
 
-signals:
-    void spellChecked (int result);
+   signals:
+    void spellChecked(int result);
 
-private:
-    Ui::SpellDialog *ui;
-    SpellChecker *spellChecker_;
+   private:
+    Ui::SpellDialog* ui;
+    SpellChecker* spellChecker_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SPELLDIALOG_H
+#endif  // SPELLDIALOG_H

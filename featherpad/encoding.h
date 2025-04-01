@@ -24,8 +24,8 @@
 
 namespace FeatherPad {
 
-const QString detectCharset (const QByteArray& byteArray);
+const QString detectCharset(const QByteArray& byteArray);
 
 }
 
-#endif // ENCODING_H
+#endif  // ENCODING_H

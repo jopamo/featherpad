@@ -28,78 +28,72 @@
 
 namespace FeatherPad {
 
-static bool showHidden = false; // remember
+static bool showHidden = false;  // remember
 
 /* We want to auto-scroll to selected file and
    remember whether hidden files should be shown. */
 class FileDialog : public QFileDialog {
     Q_OBJECT
-public:
-    FileDialog (QWidget *parent, bool isNative = false) : QFileDialog (parent) {
+   public:
+    FileDialog(QWidget* parent, bool isNative = false) : QFileDialog(parent) {
         tView = nullptr;
         p = parent;
         native = isNative;
-        setWindowModality (Qt::WindowModal);
-        setViewMode (QFileDialog::Detail);
-        if (!native)
-        {
-            setOption (QFileDialog::DontUseNativeDialog);
+        setWindowModality(Qt::WindowModal);
+        setViewMode(QFileDialog::Detail);
+        if (!native) {
+            setOption(QFileDialog::DontUseNativeDialog);
             if (showHidden)
-                setFilter (filter() | QDir::Hidden);
-            QShortcut *toggleHidden0 = new QShortcut (QKeySequence (tr ("Ctrl+H", "Toggle showing hidden files")), this);
-            QShortcut *toggleHidden1 = new QShortcut (QKeySequence (tr ("Alt+.", "Toggle showing hidden files")), this);
-            connect (toggleHidden0, &QShortcut::activated, this, &FileDialog::toggleHidden);
-            connect (toggleHidden1, &QShortcut::activated, this, &FileDialog::toggleHidden);
+                setFilter(filter() | QDir::Hidden);
+            QShortcut* toggleHidden0 = new QShortcut(QKeySequence(tr("Ctrl+H", "Toggle showing hidden files")), this);
+            QShortcut* toggleHidden1 = new QShortcut(QKeySequence(tr("Alt+.", "Toggle showing hidden files")), this);
+            connect(toggleHidden0, &QShortcut::activated, this, &FileDialog::toggleHidden);
+            connect(toggleHidden1, &QShortcut::activated, this, &FileDialog::toggleHidden);
         }
     }
 
-    ~FileDialog() {
-        showHidden = (filter() & QDir::Hidden);
-    }
+    ~FileDialog() { showHidden = (filter() & QDir::Hidden); }
 
     void autoScroll() {
-        if (native) return;
-        tView = findChild<QTreeView *>("treeView");
+        if (native)
+            return;
+        tView = findChild<QTreeView*>("treeView");
         if (tView)
-            connect (tView->model(), &QAbstractItemModel::layoutChanged, this, &FileDialog::scrollToSelection);
+            connect(tView->model(), &QAbstractItemModel::layoutChanged, this, &FileDialog::scrollToSelection);
     }
 
-protected:
-    void showEvent(QShowEvent * event) {
+   protected:
+    void showEvent(QShowEvent* event) {
         if (p && !native && QGuiApplication::platformName() != "wayland")
-            QTimer::singleShot (0, this, &FileDialog::center);
-        QFileDialog::showEvent (event);
+            QTimer::singleShot(0, this, &FileDialog::center);
+        QFileDialog::showEvent(event);
     }
 
-private slots:
+   private slots:
     void scrollToSelection() {
-        if (tView)
-        {
+        if (tView) {
             QModelIndexList iList = tView->selectionModel()->selectedIndexes();
             if (!iList.isEmpty())
-                tView->scrollTo (iList.at (0), QAbstractItemView::PositionAtCenter);
+                tView->scrollTo(iList.at(0), QAbstractItemView::PositionAtCenter);
         }
     }
 
-    void center() {
-        move (p->x() + p->width()/2 - width()/2,
-              p->y() + p->height()/2 - height()/ 2);
-    }
+    void center() { move(p->x() + p->width() / 2 - width() / 2, p->y() + p->height() / 2 - height() / 2); }
 
     void toggleHidden() {
         showHidden = !(filter() & QDir::Hidden);
         if (showHidden)
-            setFilter (filter() | QDir::Hidden);
+            setFilter(filter() | QDir::Hidden);
         else
-            setFilter (filter() & ~QDir::Hidden);
+            setFilter(filter() & ~QDir::Hidden);
     }
 
-private:
-    QTreeView *tView;
-    QWidget *p;
+   private:
+    QTreeView* tView;
+    QWidget* p;
     bool native;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // FILEDIALOG_H
+#endif  // FILEDIALOG_H

@@ -27,36 +27,33 @@
 
 namespace FeatherPad {
 
-class TabWidget : public QTabWidget
-{
+class TabWidget : public QTabWidget {
     Q_OBJECT
 
-public:
-    TabWidget (QWidget *parent = nullptr);
+   public:
+    TabWidget(QWidget* parent = nullptr);
     ~TabWidget();
     /* make it public */
-    TabBar* tabBar() const {return tb_;}
+    TabBar* tabBar() const { return tb_; }
     QWidget* getLastActiveTab();
-    void removeTab (int index);
+    void removeTab(int index);
     void selectLastActiveTab();
 
-    void noTabDND() {
-        tb_->noTabDND();
-    }
+    void noTabDND() { tb_->noTabDND(); }
 
-signals:
-    void currentTabChanged (int curIndx);
-    void hasLastActiveTab (bool hasLastActive);
+   signals:
+    void currentTabChanged(int curIndx);
+    void hasLastActiveTab(bool hasLastActive);
 
-protected:
-    void timerEvent (QTimerEvent *event);
-    void keyPressEvent (QKeyEvent *event);
+   protected:
+    void timerEvent(QTimerEvent* event);
+    void keyPressEvent(QKeyEvent* event);
 
-private slots:
-    void tabSwitch (int index);
+   private slots:
+    void tabSwitch(int index);
 
-private:
-    TabBar *tb_;
+   private:
+    TabBar* tb_;
     int timerId_;
     int curIndx_;
     /* This is the list of activated tabs, in the order of activation,
@@ -64,6 +61,6 @@ private:
     QList<QWidget*> activatedTabs_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // TABWIDGET_H
+#endif  // TABWIDGET_H

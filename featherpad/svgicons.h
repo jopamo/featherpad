@@ -24,7 +24,7 @@
 
 namespace FeatherPad {
 namespace symbolicIcon {
-    QIcon icon (const QString& fileName);
+QIcon icon(const QString& fileName);
 }
-}
-#endif // SVGICONS_H
+}  // namespace FeatherPad
+#endif  // SVGICONS_H

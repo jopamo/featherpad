@@ -29,14 +29,13 @@
 #include <QLibraryInfo>
 #include <QTranslator>
 
-int main (int argc, char **argv)
-{
+int main(int argc, char** argv) {
     const QString name = "FeatherPad";
     const QString version = "1.6.1";
 
-    FeatherPad::FPsingleton singleton (argc, argv);
-    singleton.setApplicationName (name);
-    singleton.setApplicationVersion (version);
+    FeatherPad::FPsingleton singleton(argc, argv);
+    singleton.setApplicationName(name);
+    singleton.setApplicationVersion(version);
 
     QStringList args = singleton.arguments();
     if (!args.isEmpty())
@@ -44,67 +43,65 @@ int main (int argc, char **argv)
 
     QString firstArg;
     if (!args.isEmpty())
-        firstArg = args.at (0);
+        firstArg = args.at(0);
 
-    if (firstArg == "--help" || firstArg == "-h")
-    {
-        QTextStream out (stdout);
-        out << "FeatherPad - Lightweight Qt text editor\n"\
-               "Usage:\n	featherpad [option(s)] [file1 file2 ...]\n"\
-               "Or:\n	fpad [option(s)] [file1 file2 ...]\n\n"\
-               "Options:\n\n"\
-               "--help or -h        Show this help and exit.\n"\
-               "--version or -v     Show version information and exit.\n"\
-               "--standalone or -s  Start a standalone process of FeatherPad.\n"\
-               "--win or -w         Open file(s) in a new window.\n"\
-               "+                   Place cursor at document end.\n"\
-               "+<L>                Place cursor at start of line L (L starts from 1).\n"\
-               "+<L>,<P>            Place cursor at position P of line L (P starts from 0\n"\
-               "                    but a negative value means line end).\n"\
-               "\nNOTE1: <X> means number X without brackets.\n"\
-               "NOTE2: --standalone or -s can only be the first option. If it exists,\n"\
-               "       --win or -w will be ignored because a standalone process always\n"\
-               "       has its separate, single window.\n"\
-               "NOTE3: --win or -w can come before or after cursor option, with a space\n"\
+    if (firstArg == "--help" || firstArg == "-h") {
+        QTextStream out(stdout);
+        out << "FeatherPad - Lightweight Qt text editor\n"
+               "Usage:\n	featherpad [option(s)] [file1 file2 ...]\n"
+               "Or:\n	fpad [option(s)] [file1 file2 ...]\n\n"
+               "Options:\n\n"
+               "--help or -h        Show this help and exit.\n"
+               "--version or -v     Show version information and exit.\n"
+               "--standalone or -s  Start a standalone process of FeatherPad.\n"
+               "--win or -w         Open file(s) in a new window.\n"
+               "+                   Place cursor at document end.\n"
+               "+<L>                Place cursor at start of line L (L starts from 1).\n"
+               "+<L>,<P>            Place cursor at position P of line L (P starts from 0\n"
+               "                    but a negative value means line end).\n"
+               "\nNOTE1: <X> means number X without brackets.\n"
+               "NOTE2: --standalone or -s can only be the first option. If it exists,\n"
+               "       --win or -w will be ignored because a standalone process always\n"
+               "       has its separate, single window.\n"
+               "NOTE3: --win or -w can come before or after cursor option, with a space\n"
                "       in between."
             << Qt::endl;
         return 0;
     }
-    else if (firstArg == "--version" || firstArg == "-v")
-    {
-        QTextStream out (stdout);
+    else if (firstArg == "--version" || firstArg == "-v") {
+        QTextStream out(stdout);
         out << name << " " << version << Qt::endl;
         return 0;
     }
 
-    singleton.init (firstArg == "--standalone" || firstArg == "-s");
+    singleton.init(firstArg == "--standalone" || firstArg == "-s");
 
     // with QLocale::system().name(), X and X_Y may be the same in tests
-    QStringList langs (QLocale::system().uiLanguages());
+    QStringList langs(QLocale::system().uiLanguages());
     QString lang;
     if (!langs.isEmpty())
-        lang = langs.first().replace ('-', '_');
+        lang = langs.first().replace('-', '_');
 
     QTranslator qtTranslator;
-    if (qtTranslator.load ("qt_" + lang, QLibraryInfo::path (QLibraryInfo::TranslationsPath)))
-        singleton.installTranslator (&qtTranslator);
-    else if (!langs.isEmpty())
-    { // shouldn't be needed
-        lang = langs.first().split (QLatin1Char ('_')).first();
-        if (qtTranslator.load ("qt_" + lang, QLibraryInfo::path (QLibraryInfo::TranslationsPath)))
-            singleton.installTranslator (&qtTranslator);
+    if (qtTranslator.load("qt_" + lang, QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        singleton.installTranslator(&qtTranslator);
+    else if (!langs.isEmpty()) {  // shouldn't be needed
+        lang = langs.first().split(QLatin1Char('_')).first();
+        if (qtTranslator.load("qt_" + lang, QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+            singleton.installTranslator(&qtTranslator);
     }
 
     QTranslator FPTranslator;
 #if defined(Q_OS_HAIKU)
-    if (FPTranslator.load ("featherpad_" + lang, QStringLiteral (DATADIR) + "/../translations"))
+    if (FPTranslator.load("featherpad_" + lang, QStringLiteral(DATADIR) + "/../translations"))
 #elif defined(Q_OS_MAC)
-    if (FPTranslator.load ("featherpad_" + lang, singleton.applicationDirPath() + QStringLiteral ("/../Resources/translations/")))
+    if (FPTranslator.load("featherpad_" + lang,
+                          singleton.applicationDirPath() + QStringLiteral("/../Resources/translations/")))
 #else
-    if (FPTranslator.load ("featherpad_" + lang, QStringLiteral (DATADIR) + "/featherpad/translations"))
+    if (FPTranslator.load("featherpad_" + lang, QStringLiteral(DATADIR) + "/featherpad/translations"))
 #endif
     {
-        singleton.installTranslator (&FPTranslator);
+        singleton.installTranslator(&FPTranslator);
     }
 
     QStringList info;
@@ -113,24 +110,22 @@ int main (int argc, char **argv)
 #else
     int d = -1;
 #endif
-    info << QString::number (d) << QDir::currentPath();
+    info << QString::number(d) << QDir::currentPath();
     if (!args.isEmpty())
         info << args;
 
-    if (!singleton.isPrimaryInstance())
-    {
-        singleton.sendInfo (info); // is sent to the primary instance
+    if (!singleton.isPrimaryInstance()) {
+        singleton.sendInfo(info);  // is sent to the primary instance
         return 0;
     }
 
     // Handle SIGQUIT, SIGINT, SIGTERM and SIGHUP (-> https://en.wikipedia.org/wiki/Unix_signal).
     FeatherPad::signalDaemon D;
     D.watchUnixSignals();
-    QObject::connect (&D, &FeatherPad::signalDaemon::sigQUIT,
-                      &singleton, &FeatherPad::FPsingleton::quitSignalReceived);
+    QObject::connect(&D, &FeatherPad::signalDaemon::sigQUIT, &singleton, &FeatherPad::FPsingleton::quitSignalReceived);
 
-    QObject::connect (&singleton, &QCoreApplication::aboutToQuit, &singleton, &FeatherPad::FPsingleton::quitting);
-    singleton.firstWin (info);
+    QObject::connect(&singleton, &QCoreApplication::aboutToQuit, &singleton, &FeatherPad::FPsingleton::quitting);
+    singleton.firstWin(info);
 
     return singleton.exec();
 }

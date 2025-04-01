@@ -26,23 +26,18 @@
 
 namespace FeatherPad {
 
-class TabPage : public QWidget
-{
+class TabPage : public QWidget {
     Q_OBJECT
-public:
-    TabPage (int bgColorValue = 255,
-             const QList<QKeySequence>& searchShortcuts = QList<QKeySequence>(),
-             QWidget *parent = nullptr);
+   public:
+    TabPage(int bgColorValue = 255,
+            const QList<QKeySequence>& searchShortcuts = QList<QKeySequence>(),
+            QWidget* parent = nullptr);
 
-    QPointer<TextEdit> textEdit() const {
-        return textEdit_;
-    }
+    QPointer<TextEdit> textEdit() const { return textEdit_; }
 
-    void setSearchModel (QStandardItemModel *model) {
-        searchBar_->setSearchModel (model);
-    }
+    void setSearchModel(QStandardItemModel* model) { searchBar_->setSearchModel(model); }
 
-    void setSearchBarVisible (bool visible);
+    void setSearchBarVisible(bool visible);
     bool isSearchBarVisible() const;
     void focusSearchBar();
     bool searchBarHasFocus() const;
@@ -54,19 +49,19 @@ public:
     bool matchWhole() const;
     bool matchRegex() const;
 
-    void updateShortcuts (bool disable);
+    void updateShortcuts(bool disable);
 
-    void lockPage (bool lock);
+    void lockPage(bool lock);
 
-signals:
-    void find (bool forward);
+   signals:
+    void find(bool forward);
     void searchFlagChanged();
 
-private:
+   private:
     QPointer<TextEdit> textEdit_;
     QPointer<SearchBar> searchBar_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // TABPAGE_H
+#endif  // TABPAGE_H

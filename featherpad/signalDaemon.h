@@ -24,51 +24,50 @@
 
 namespace FeatherPad {
 
-class signalDaemon : public QObject
-{
+class signalDaemon : public QObject {
     Q_OBJECT
-public:
-    signalDaemon (QObject *parent = nullptr);
+   public:
+    signalDaemon(QObject* parent = nullptr);
     ~signalDaemon();
 
     // Should be called for watching the supported Unix signals.
     void watchUnixSignals();
 
     // Unix signal handlers (for SIGHUP, SIGTERM, SIGINT and SIGQUIT).
-    static void hupSignalHandler (int unused);
-    static void termSignalHandler (int unused);
-    static void intSignalHandler (int unused);
-    static void quitSignalHandler (int unused);
+    static void hupSignalHandler(int unused);
+    static void termSignalHandler(int unused);
+    static void intSignalHandler(int unused);
+    static void quitSignalHandler(int unused);
 
-signals:
-    //void sigTERM();
-    //void sigHUP();
-    //void sigINT();
-    void sigQUIT(); // We don't need different signals.
+   signals:
+    // void sigTERM();
+    // void sigHUP();
+    // void sigINT();
+    void sigQUIT();  // We don't need different signals.
 
-private slots:
+   private slots:
     // Qt signal handlers.
     void handleSigHup();
     void handleSigTerm();
     void handleSigINT();
     void handleSigQUIT();
 
-private:
+   private:
     // Returns true if the signal can be watched,
     // although the returned value isn't used.
-    bool watchSignal (int sig);
+    bool watchSignal(int sig);
 
     static int sighupFd[2];
     static int sigtermFd[2];
     static int sigintFd[2];
     static int sigquitFd[2];
 
-    QSocketNotifier *snHup_;
-    QSocketNotifier *snTerm_;
-    QSocketNotifier *snInt_;
-    QSocketNotifier *snQuit_;
+    QSocketNotifier* snHup_;
+    QSocketNotifier* snTerm_;
+    QSocketNotifier* snInt_;
+    QSocketNotifier* snQuit_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SIGNALDAEMON_H
+#endif  // SIGNALDAEMON_H

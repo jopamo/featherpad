@@ -23,3 +23,5 @@ BreakBeforeBraces: Custom
 ColumnLimit: 120
 IncludeBlocks: Preserve
 SortIncludes: Never
+IndentWidth: 4
+TabWidth: 4

@@ -24,64 +24,56 @@
 
 namespace FeatherPad {
 
-MenuBarTitle::MenuBarTitle (QWidget *parent, Qt::WindowFlags f)
-    : QLabel (parent, f), lastWidth_ (0), start_(0)
-{
-    setSizePolicy (QSizePolicy::Preferred, QSizePolicy::Preferred);
-    setContentsMargins (10, 0, 10, 0);
-    setFrameShape (QFrame::NoFrame);
+MenuBarTitle::MenuBarTitle(QWidget* parent, Qt::WindowFlags f) : QLabel(parent, f), lastWidth_(0), start_(0) {
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    setContentsMargins(10, 0, 10, 0);
+    setFrameShape(QFrame::NoFrame);
     /* set a min width to prevent the window from widening with long texts */
-    setMinimumWidth (fontMetrics().averageCharWidth() * 10);
+    setMinimumWidth(fontMetrics().averageCharWidth() * 10);
     height_ = fontMetrics().height();
 
     QFont fnt = font();
-    fnt.setBold (true);
-    fnt.setItalic (true);
-    setFont (fnt);
+    fnt.setBold(true);
+    fnt.setItalic(true);
+    setFont(fnt);
 
-    setContextMenuPolicy (Qt::CustomContextMenu);
+    setContextMenuPolicy(Qt::CustomContextMenu);
 }
 /*************************/
-void MenuBarTitle::paintEvent (QPaintEvent* /*event*/)
-{
-    QRect cr = contentsRect().adjusted (margin(), margin(), -margin(), -margin());
+void MenuBarTitle::paintEvent(QPaintEvent* /*event*/) {
+    QRect cr = contentsRect().adjusted(margin(), margin(), -margin(), -margin());
     QString txt = text();
     /* if the text is changed or its rect is resized (due to window resizing),
        find whether it needs to be elided... */
-    if (txt != lastText_ || cr.width() != lastWidth_)
-    {
+    if (txt != lastText_ || cr.width() != lastWidth_) {
         lastText_ = txt;
         lastWidth_ = cr.width();
-        elidedText_ = fontMetrics().elidedText (txt, Qt::ElideMiddle, lastWidth_);
+        elidedText_ = fontMetrics().elidedText(txt, Qt::ElideMiddle, lastWidth_);
     }
     /* ... then, draw the (elided) text */
-    if (!elidedText_.isEmpty())
-    {
-        QPainter painter (this);
+    if (!elidedText_.isEmpty()) {
+        QPainter painter(this);
         QStyleOption opt;
-        opt.initFrom (this);
-        style()->drawItemText (&painter, cr, Qt::AlignRight | Qt::AlignVCenter,
-                               opt.palette, isEnabled(), elidedText_, foregroundRole());
+        opt.initFrom(this);
+        style()->drawItemText(&painter, cr, Qt::AlignRight | Qt::AlignVCenter, opt.palette, isEnabled(), elidedText_,
+                              foregroundRole());
     }
 }
 /*************************/
-void MenuBarTitle::mouseDoubleClickEvent (QMouseEvent *event)
-{
-    QLabel::mouseDoubleClickEvent (event);
+void MenuBarTitle::mouseDoubleClickEvent(QMouseEvent* event) {
+    QLabel::mouseDoubleClickEvent(event);
     if (event->button() == Qt::LeftButton)
         emit doubleClicked();
 }
 /*************************/
-void MenuBarTitle::setTitle (const QString &title)
-{
-    setText (title.simplified());
+void MenuBarTitle::setTitle(const QString& title) {
+    setText(title.simplified());
 }
 /*************************/
-QSize MenuBarTitle::sizeHint() const
-{
-    if (QWidget *p = parentWidget())
-        return QSize (p->width() - start_, height_);
+QSize MenuBarTitle::sizeHint() const {
+    if (QWidget* p = parentWidget())
+        return QSize(p->width() - start_, height_);
     return QLabel::sizeHint();
 }
 
-}
+}  // namespace FeatherPad

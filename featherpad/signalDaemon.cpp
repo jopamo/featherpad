@@ -33,55 +33,45 @@ int signalDaemon::sigtermFd[2];
 int signalDaemon::sigintFd[2];
 int signalDaemon::sigquitFd[2];
 
-signalDaemon::signalDaemon (QObject *parent) : QObject (parent)
-{
-    if (::socketpair (AF_UNIX, SOCK_STREAM, 0, sighupFd) == 0)
-    {
-        snHup_ = new QSocketNotifier (sighupFd[1], QSocketNotifier::Read, this);
-        connect (snHup_, &QSocketNotifier::activated, this, &signalDaemon::handleSigHup);
+signalDaemon::signalDaemon(QObject* parent) : QObject(parent) {
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sighupFd) == 0) {
+        snHup_ = new QSocketNotifier(sighupFd[1], QSocketNotifier::Read, this);
+        connect(snHup_, &QSocketNotifier::activated, this, &signalDaemon::handleSigHup);
     }
-    else
-    {
+    else {
         snHup_ = nullptr;
-        qDebug ("Couldn't create HUP socketpair");
+        qDebug("Couldn't create HUP socketpair");
     }
 
-    if (::socketpair (AF_UNIX, SOCK_STREAM, 0, sigtermFd) == 0)
-    {
-        snTerm_ = new QSocketNotifier (sigtermFd[1], QSocketNotifier::Read, this);
-        connect (snTerm_, &QSocketNotifier::activated, this, &signalDaemon::handleSigTerm);
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sigtermFd) == 0) {
+        snTerm_ = new QSocketNotifier(sigtermFd[1], QSocketNotifier::Read, this);
+        connect(snTerm_, &QSocketNotifier::activated, this, &signalDaemon::handleSigTerm);
     }
-    else
-    {
+    else {
         snTerm_ = nullptr;
-        qDebug ("Couldn't create TERM socketpair");
+        qDebug("Couldn't create TERM socketpair");
     }
 
-    if (::socketpair (AF_UNIX, SOCK_STREAM, 0, sigintFd) == 0)
-    {
-        snInt_ = new QSocketNotifier (sigintFd[1], QSocketNotifier::Read, this);
-        connect (snInt_, &QSocketNotifier::activated, this, &signalDaemon::handleSigINT);
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sigintFd) == 0) {
+        snInt_ = new QSocketNotifier(sigintFd[1], QSocketNotifier::Read, this);
+        connect(snInt_, &QSocketNotifier::activated, this, &signalDaemon::handleSigINT);
     }
-    else
-    {
+    else {
         snInt_ = nullptr;
-        qDebug ("Couldn't create INT socketpair");
+        qDebug("Couldn't create INT socketpair");
     }
 
-    if (::socketpair (AF_UNIX, SOCK_STREAM, 0, sigquitFd) == 0)
-    {
-        snQuit_ = new QSocketNotifier (sigquitFd[1], QSocketNotifier::Read, this);
-        connect (snQuit_, &QSocketNotifier::activated, this, &signalDaemon::handleSigQUIT);
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sigquitFd) == 0) {
+        snQuit_ = new QSocketNotifier(sigquitFd[1], QSocketNotifier::Read, this);
+        connect(snQuit_, &QSocketNotifier::activated, this, &signalDaemon::handleSigQUIT);
     }
-    else
-    {
+    else {
         snQuit_ = nullptr;
-        qDebug ("Couldn't create QUIT socketpair");
+        qDebug("Couldn't create QUIT socketpair");
     }
 }
 /*************************/
-signalDaemon::~signalDaemon()
-{
+signalDaemon::~signalDaemon() {
     delete snHup_;
     delete snTerm_;
     delete snInt_;
@@ -89,117 +79,109 @@ signalDaemon::~signalDaemon()
 }
 /*************************/
 // Write a byte to the "write" end of a socket pair and return.
-void signalDaemon::hupSignalHandler (int)
-{
+void signalDaemon::hupSignalHandler(int) {
     char a = 1;
-    auto w = ::write (sighupFd[0], &a, sizeof (a));
-    Q_UNUSED (w);
+    auto w = ::write(sighupFd[0], &a, sizeof(a));
+    Q_UNUSED(w);
 }
 
-void signalDaemon::termSignalHandler (int)
-{
+void signalDaemon::termSignalHandler(int) {
     char a = 1;
-    auto w = ::write (sigtermFd[0], &a, sizeof (a));
-    Q_UNUSED (w);
+    auto w = ::write(sigtermFd[0], &a, sizeof(a));
+    Q_UNUSED(w);
 }
 
-void signalDaemon::intSignalHandler (int)
-{
+void signalDaemon::intSignalHandler(int) {
     char a = 1;
-    auto w = ::write (sigintFd[0], &a, sizeof (a));
-    Q_UNUSED (w);
+    auto w = ::write(sigintFd[0], &a, sizeof(a));
+    Q_UNUSED(w);
 }
 
-void signalDaemon::quitSignalHandler (int)
-{
+void signalDaemon::quitSignalHandler(int) {
     char a = 1;
-    auto w = ::write (sigquitFd[0], &a, sizeof (a));
-    Q_UNUSED (w);
+    auto w = ::write(sigquitFd[0], &a, sizeof(a));
+    Q_UNUSED(w);
 }
 /*************************/
 // Read the byte and emit the corresponding Qt signal.
-void signalDaemon::handleSigHup()
-{
-    snHup_->setEnabled (false);
+void signalDaemon::handleSigHup() {
+    snHup_->setEnabled(false);
     char tmp;
-    auto w = ::read (sighupFd[1], &tmp, sizeof (tmp));
-    Q_UNUSED (w);
-    //emit sigHUP();
+    auto w = ::read(sighupFd[1], &tmp, sizeof(tmp));
+    Q_UNUSED(w);
+    // emit sigHUP();
     emit sigQUIT();
-    snHup_->setEnabled (true);
+    snHup_->setEnabled(true);
 }
 
-void signalDaemon::handleSigTerm()
-{
-    snTerm_->setEnabled (false);
+void signalDaemon::handleSigTerm() {
+    snTerm_->setEnabled(false);
     char tmp;
-    auto w = ::read (sigtermFd[1], &tmp, sizeof (tmp));
-    Q_UNUSED (w);
-    //emit sigTERM();
+    auto w = ::read(sigtermFd[1], &tmp, sizeof(tmp));
+    Q_UNUSED(w);
+    // emit sigTERM();
     emit sigQUIT();
-    snTerm_->setEnabled (true);
+    snTerm_->setEnabled(true);
 }
 
-void signalDaemon::handleSigINT()
-{
-    snInt_->setEnabled (false);
+void signalDaemon::handleSigINT() {
+    snInt_->setEnabled(false);
     char tmp;
-    auto w = ::read (sigintFd[1], &tmp, sizeof (tmp));
-    Q_UNUSED (w);
-    //emit sigINT();
+    auto w = ::read(sigintFd[1], &tmp, sizeof(tmp));
+    Q_UNUSED(w);
+    // emit sigINT();
     emit sigQUIT();
-    snInt_->setEnabled (true);
+    snInt_->setEnabled(true);
 }
 
-void signalDaemon::handleSigQUIT()
-{
-    snQuit_->setEnabled (false);
+void signalDaemon::handleSigQUIT() {
+    snQuit_->setEnabled(false);
     char tmp;
-    auto w = ::read (sigquitFd[1], &tmp, sizeof (tmp));
-    Q_UNUSED (w);
+    auto w = ::read(sigquitFd[1], &tmp, sizeof(tmp));
+    Q_UNUSED(w);
     emit sigQUIT();
-    snQuit_->setEnabled (true);
+    snQuit_->setEnabled(true);
 }
 /*************************/
-bool signalDaemon::watchSignal (int sig) {
+bool signalDaemon::watchSignal(int sig) {
     struct sigaction sigact;
     switch (sig) {
-    case SIGHUP:
-        if (snHup_ == nullptr)
+        case SIGHUP:
+            if (snHup_ == nullptr)
+                return false;
+            sigact.sa_handler = hupSignalHandler;
+            break;
+        case SIGTERM:
+            if (snTerm_ == nullptr)
+                return false;
+            sigact.sa_handler = termSignalHandler;
+            break;
+        case SIGINT:
+            if (snInt_ == nullptr)
+                return false;
+            sigact.sa_handler = intSignalHandler;
+            break;
+        case SIGQUIT:
+            if (snQuit_ == nullptr)
+                return false;
+            sigact.sa_handler = quitSignalHandler;
+            break;
+        default:
             return false;
-        sigact.sa_handler = hupSignalHandler;
-        break;
-    case SIGTERM:
-        if (snTerm_ == nullptr)
-            return false;
-        sigact.sa_handler = termSignalHandler;
-        break;
-    case SIGINT:
-        if (snInt_ == nullptr)
-            return false;
-        sigact.sa_handler = intSignalHandler;
-        break;
-    case SIGQUIT:
-        if (snQuit_ == nullptr)
-            return false;
-        sigact.sa_handler = quitSignalHandler;
-        break;
-    default:
-        return false;
     }
-    sigemptyset (&sigact.sa_mask);
+    sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
     sigact.sa_flags |= SA_RESTART;
-    if (sigaction (sig, &sigact, nullptr) != 0)
+    if (sigaction(sig, &sigact, nullptr) != 0)
         return false;
     return true;
 }
 /*************************/
 void signalDaemon::watchUnixSignals() {
-    watchSignal (SIGHUP);
-    watchSignal (SIGTERM);
-    watchSignal (SIGINT);
-    watchSignal (SIGQUIT);
+    watchSignal(SIGHUP);
+    watchSignal(SIGTERM);
+    watchSignal(SIGINT);
+    watchSignal(SIGQUIT);
 }
 
-}
+}  // namespace FeatherPad

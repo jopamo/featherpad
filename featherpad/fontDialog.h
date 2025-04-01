@@ -28,23 +28,20 @@ namespace Ui {
 class FontDialog;
 }
 
-class FontDialog : public QDialog
-{
+class FontDialog : public QDialog {
     Q_OBJECT
 
-public:
-    explicit FontDialog (const QFont &font, QWidget *parent = nullptr);
+   public:
+    explicit FontDialog(const QFont& font, QWidget* parent = nullptr);
     ~FontDialog();
 
-    QFont selectedFont() const {
-        return font_;
-    }
+    QFont selectedFont() const { return font_; }
 
-private:
-    Ui::FontDialog *ui;
+   private:
+    Ui::FontDialog* ui;
     QFont font_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // FONTDIALOG_H
+#endif  // FONTDIALOG_H

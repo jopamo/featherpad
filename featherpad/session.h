@@ -29,19 +29,18 @@ namespace Ui {
 class SessionDialog;
 }
 
-class SessionDialog : public QDialog
-{
+class SessionDialog : public QDialog {
     Q_OBJECT
 
-public:
-    explicit SessionDialog (QWidget *parent = nullptr);
+   public:
+    explicit SessionDialog(QWidget* parent = nullptr);
     ~SessionDialog();
 
-protected:
-    bool eventFilter (QObject *watched, QEvent *event);
+   protected:
+    bool eventFilter(QObject* watched, QEvent* event);
 
-private slots:
-    void showContextMenu (const QPoint &p);
+   private slots:
+    void showContextMenu(const QPoint& p);
     void saveSession();
     void reallySaveSession();
     void selectionChanged();
@@ -53,35 +52,30 @@ private slots:
     void showPromptPage();
     void renameSession();
     void reallyRenameSession();
-    void OnCommittingName (QWidget* editor);
-    void filter (const QString&);
+    void OnCommittingName(QWidget* editor);
+    void filter(const QString&);
     void reallyApplyFilter();
 
-private:
-    enum PROMPT {
-      NAME,
-      RENAME,
-      REMOVE,
-      CLEAR
-    };
+   private:
+    enum PROMPT { NAME, RENAME, REMOVE, CLEAR };
 
     struct Rename {
-      QString oldName;
-      QString newName;
+        QString oldName;
+        QString newName;
     };
 
-    void showPrompt (PROMPT prompt);
-    void showPrompt (const QString& message);
-    void onEmptinessChanged (bool empty);
+    void showPrompt(PROMPT prompt);
+    void showPrompt(const QString& message);
+    void onEmptinessChanged(bool empty);
 
-    Ui::SessionDialog *ui;
-    QWidget * parent_;
+    Ui::SessionDialog* ui;
+    QWidget* parent_;
     Rename rename_;
     /* Used only for filtering: */
     QStringList allItems_;
-    QTimer *filterTimer_;
+    QTimer* filterTimer_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SESSION_H
+#endif  // SESSION_H

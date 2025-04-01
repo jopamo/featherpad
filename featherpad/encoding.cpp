@@ -23,36 +23,31 @@ namespace FeatherPad {
 
 /* In the GTK+ version, I used g_utf8_validate().
    This function validates UTF-8 directly and fast. */
-bool validateUTF8 (const QByteArray byteArray)
-{
-    const char *string = byteArray.constData();
-    if (!string) return true;
+bool validateUTF8(const QByteArray byteArray) {
+    const char* string = byteArray.constData();
+    if (!string)
+        return true;
 
-    const unsigned char *bytes = (const unsigned char*)string;
-    unsigned int cp; // code point
-    int bn; // bytes number
+    const unsigned char* bytes = (const unsigned char*)string;
+    unsigned int cp;  // code point
+    int bn;           // bytes number
 
-    while (*bytes != 0x00)
-    {
+    while (*bytes != 0x00) {
         /* assuming that UTF-8 maps a sequence of 1-4 bytes,
            we find the code point and the number of bytes */
-        if ((*bytes & 0x80) == 0x00)
-        { // 0xxxxxxx, all ASCII characters (0-127)
+        if ((*bytes & 0x80) == 0x00) {  // 0xxxxxxx, all ASCII characters (0-127)
             cp = (*bytes & 0x7F);
             bn = 1;
         }
-        else if ((*bytes & 0xE0) == 0xC0)
-        { // 110xxxxx 10xxxxxx
+        else if ((*bytes & 0xE0) == 0xC0) {  // 110xxxxx 10xxxxxx
             cp = (*bytes & 0x1F);
             bn = 2;
         }
-        else if ((*bytes & 0xF0) == 0xE0)
-        { // 1110xxxx 10xxxxxx 10xxxxxx
+        else if ((*bytes & 0xF0) == 0xE0) {  // 1110xxxx 10xxxxxx 10xxxxxx
             cp = (*bytes & 0x0F);
             bn = 3;
         }
-        else if ((*bytes & 0xF8) == 0xF0)
-        { // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+        else if ((*bytes & 0xF8) == 0xF0) {  // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
             cp = (*bytes & 0x07);
             bn = 4;
         }
@@ -60,8 +55,7 @@ bool validateUTF8 (const QByteArray byteArray)
             return false;
 
         bytes += 1;
-        for (int i = 1; i < bn; ++i)
-        {
+        for (int i = 1; i < bn; ++i) {
             /* all the other bytes should be of the form 10xxxxxx */
             if ((*bytes & 0xC0) != 0x80)
                 return false;
@@ -69,16 +63,13 @@ bool validateUTF8 (const QByteArray byteArray)
             bytes += 1;
         }
 
-        if (cp > 0x10FFFF // max code point by definition
+        if (cp > 0x10FFFF  // max code point by definition
             /* the range from 0xd800 to 0xdfff is reserved
                for use with UTF-16 and excluded from UTF-8 */
             || (cp >= 0xD800 && cp <= 0xDFFF)
             /* logically impossible situations */
-            || (cp <= 0x007F && bn != 1)
-            || (cp >= 0x0080 && cp <= 0x07FF && bn != 2)
-            || (cp >= 0x0800 && cp <= 0xFFFF && bn != 3)
-            || (cp >= 0x10000 && cp <= 0x1FFFFF && bn != 4))
-        {
+            || (cp <= 0x007F && bn != 1) || (cp >= 0x0080 && cp <= 0x07FF && bn != 2) ||
+            (cp >= 0x0800 && cp <= 0xFFFF && bn != 3) || (cp >= 0x10000 && cp <= 0x1FFFFF && bn != 4)) {
             return false;
         }
     }
@@ -86,12 +77,11 @@ bool validateUTF8 (const QByteArray byteArray)
     return true;
 }
 /*************************/
-const QString detectCharset (const QByteArray& byteArray)
-{
-    if (validateUTF8 (byteArray))
-        return QStringLiteral ("UTF-8");
+const QString detectCharset(const QByteArray& byteArray) {
+    if (validateUTF8(byteArray))
+        return QStringLiteral("UTF-8");
     /* legacy encodings aren't supported by Qt >= Qt6 */
-    return QStringLiteral ("ISO-8859-1");
+    return QStringLiteral("ISO-8859-1");
 }
 
-}
+}  // namespace FeatherPad

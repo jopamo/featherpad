@@ -27,23 +27,21 @@ namespace FeatherPad {
 
 class LineEdit : public QLineEdit {
     Q_OBJECT
-public:
-    LineEdit (QWidget *parent = nullptr);
+   public:
+    LineEdit(QWidget* parent = nullptr);
     ~LineEdit() {}
 
-    void pressKey (QKeyEvent *event) {
-        keyPressEvent (event);
-    }
+    void pressKey(QKeyEvent* event) { keyPressEvent(event); }
 
-signals:
+   signals:
     void receivedFocus();
-    void showComboPopup(); // in case it belongs to a combo box
+    void showComboPopup();  // in case it belongs to a combo box
 
-protected:
-    virtual void keyPressEvent (QKeyEvent *event);
-    void focusInEvent (QFocusEvent *ev);
+   protected:
+    virtual void keyPressEvent(QKeyEvent* event);
+    void focusInEvent(QFocusEvent* ev);
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // LINEEDIT_H
+#endif  // LINEEDIT_H

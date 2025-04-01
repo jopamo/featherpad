@@ -31,22 +31,23 @@ namespace FeatherPad {
 class Printing : public QThread {
     Q_OBJECT
 
-public:
-    Printing (QTextDocument *document, const QString &fileName,
-              const QColor &textColor, int darkValue,
-              double sourceDpiX, double sourceDpiY);
+   public:
+    Printing(QTextDocument* document,
+             const QString& fileName,
+             const QColor& textColor,
+             int darkValue,
+             double sourceDpiX,
+             double sourceDpiY);
     ~Printing();
 
-    QPrinter* printer() const {
-        return printer_;
-    }
+    QPrinter* printer() const { return printer_; }
 
-private:
+   private:
     void run();
 
     QPointer<QTextDocument> origDoc_;
-    QTextDocument *clonedDoc_;
-    QPrinter *printer_;
+    QTextDocument* clonedDoc_;
+    QPrinter* printer_;
     QColor textColor_;
     QColor darkColor_;
     double sourceDpiX_;
@@ -54,6 +55,6 @@ private:
     int darkValue_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // PRINTING_H
+#endif  // PRINTING_H

@@ -33,10 +33,10 @@ NOTE: This header should be included only if HAS_X11 is true,
 namespace FeatherPad {
 
 long fromDesktop();
-long onWhichDesktop (Window window);
-bool isWindowShaded (Window window);
-void unshadeWindow (Window window);
+long onWhichDesktop(Window window);
+bool isWindowShaded(Window window);
+void unshadeWindow(Window window);
 
-}
+}  // namespace FeatherPad
 
-#endif // X11_H
+#endif  // X11_H

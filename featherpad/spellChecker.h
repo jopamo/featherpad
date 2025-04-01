@@ -29,29 +29,27 @@ class Hunspell;
 namespace FeatherPad {
 
 class SpellChecker {
-public:
-    SpellChecker (const QString& dictionaryPath, const QString& userDictionary);
+   public:
+    SpellChecker(const QString& dictionaryPath, const QString& userDictionary);
     ~SpellChecker();
 
-    bool spell (const QString& word);
-    QStringList suggest (const QString& word);
-    void ignoreWord (const QString& word);
-    void addToUserWordlist (const QString& word);
+    bool spell(const QString& word);
+    QStringList suggest(const QString& word);
+    void ignoreWord(const QString& word);
+    void addToUserWordlist(const QString& word);
 
-    void addToCorrections (const QString& misspelled, const QString& correct) {
-        corrections_.insert (misspelled, correct);
+    void addToCorrections(const QString& misspelled, const QString& correct) {
+        corrections_.insert(misspelled, correct);
     }
-    QString correct (const QString& misspelled) const {
-        return corrections_.value (misspelled);
-    }
+    QString correct(const QString& misspelled) const { return corrections_.value(misspelled); }
 
-private:
-    Hunspell *hunspell_;
+   private:
+    Hunspell* hunspell_;
     QString userDictionary_;
     QStringEncoder encoder_;
     QHash<QString, QString> corrections_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SPELLCHECKER_H
+#endif  // SPELLCHECKER_H

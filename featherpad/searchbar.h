@@ -28,32 +28,30 @@
 
 namespace FeatherPad {
 
-class ComboBox : public QComboBox
-{
+class ComboBox : public QComboBox {
     Q_OBJECT
-public:
-    enum Move {NoMove=0 , MoveUp , MoveDown , MoveFirst , MoveLast};
+   public:
+    enum Move { NoMove = 0, MoveUp, MoveDown, MoveFirst, MoveLast };
 
-    ComboBox (QWidget *parent = nullptr);
+    ComboBox(QWidget* parent = nullptr);
     ~ComboBox() {}
 
-signals:
-    void moveInHistory (int move);
+   signals:
+    void moveInHistory(int move);
 
-protected:
-    void keyPressEvent (QKeyEvent *event) override;
-    bool eventFilter (QObject *watched, QEvent *event) override;
+   protected:
+    void keyPressEvent(QKeyEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 };
 
-class SearchBar : public QFrame
-{
+class SearchBar : public QFrame {
     Q_OBJECT
-public:
-    SearchBar (QWidget *parent = nullptr,
-               const QList<QKeySequence>& shortcuts = QList<QKeySequence>(),
-               Qt::WindowFlags f = Qt::WindowFlags());
+   public:
+    SearchBar(QWidget* parent = nullptr,
+              const QList<QKeySequence>& shortcuts = QList<QKeySequence>(),
+              Qt::WindowFlags f = Qt::WindowFlags());
 
-    void setSearchModel (QStandardItemModel *model);
+    void setSearchModel(QStandardItemModel* model);
     void focusLineEdit();
     bool lineEditHasFocus() const;
     QString searchEntry() const;
@@ -63,13 +61,13 @@ public:
     bool matchWhole() const;
     bool matchRegex() const;
 
-    void updateShortcuts (bool disable);
+    void updateShortcuts(bool disable);
 
-signals:
+   signals:
     void searchFlagChanged();
-    void find (bool forward);
+    void find(bool forward);
 
-private:
+   private:
     void searchStarted();
     void findForward();
     void findBackward();
@@ -86,6 +84,6 @@ private:
     QString searchText_;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // SEARCHBAR_H
+#endif  // SEARCHBAR_H

@@ -27,16 +27,15 @@ namespace FeatherPad {
 
 /* We want faster mouse wheel scrolling
    when the mouse cursor is on the scrollbar. */
-class VScrollBar : public QScrollBar
-{
+class VScrollBar : public QScrollBar {
     Q_OBJECT
-public:
-    VScrollBar (QWidget *parent = nullptr);
+   public:
+    VScrollBar(QWidget* parent = nullptr);
 
-protected:
-    void wheelEvent (QWheelEvent *event) override;
+   protected:
+    void wheelEvent(QWheelEvent* event) override;
 };
 
-}
+}  // namespace FeatherPad
 
-#endif // VSCROLLBAR_H
+#endif  // VSCROLLBAR_H
