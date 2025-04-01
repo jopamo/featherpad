@@ -1,87 +1,101 @@
 /*
- * Copyright (C) Pedram Pourang (aka Tsu Jan) 2014-2024 <tsujan2000@gmail.com>
- *
- * FeatherPad is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
- *
- * FeatherPad is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * @license GPL-2.0+ <https://spdx.org/licenses/GPL-2.0+.html>
+ featherpad/encoding.cpp
  */
 
 #include "encoding.h"
 
 namespace FeatherPad {
 
-/* In the GTK+ version, I used g_utf8_validate().
-   This function validates UTF-8 directly and fast. */
-bool validateUTF8(const QByteArray byteArray) {
-    const char* string = byteArray.constData();
-    if (!string)
-        return true;
+bool validateUTF8(const QByteArray byteArray)
+{
+    const unsigned char* p   = reinterpret_cast<const unsigned char*>(byteArray.constData());
+    const unsigned char* end = p + byteArray.size();
 
-    const unsigned char* bytes = (const unsigned char*)string;
-    unsigned int cp;  // code point
-    int bn;           // bytes number
+    while (p < end) {
+        unsigned char c = *p++;
 
-    while (*bytes != 0x00) {
-        /* assuming that UTF-8 maps a sequence of 1-4 bytes,
-           we find the code point and the number of bytes */
-        if ((*bytes & 0x80) == 0x00) {  // 0xxxxxxx, all ASCII characters (0-127)
-            cp = (*bytes & 0x7F);
-            bn = 1;
+        // Fast path for ASCII:
+        if (c < 0x80) {
+            // c is ASCII, fine, move on
+            continue;
         }
-        else if ((*bytes & 0xE0) == 0xC0) {  // 110xxxxx 10xxxxxx
-            cp = (*bytes & 0x1F);
-            bn = 2;
-        }
-        else if ((*bytes & 0xF0) == 0xE0) {  // 1110xxxx 10xxxxxx 10xxxxxx
-            cp = (*bytes & 0x0F);
-            bn = 3;
-        }
-        else if ((*bytes & 0xF8) == 0xF0) {  // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-            cp = (*bytes & 0x07);
-            bn = 4;
-        }
-        else
-            return false;
 
-        bytes += 1;
-        for (int i = 1; i < bn; ++i) {
-            /* all the other bytes should be of the form 10xxxxxx */
-            if ((*bytes & 0xC0) != 0x80)
+        // Otherwise, c >= 0x80.
+        // Check leading-byte ranges and subsequent bytes:
+
+        // Two-byte form: [C2..DF] [80..BF]
+        if (c >= 0xC2 && c <= 0xDF) {
+            if (p == end) return false; // need 1 more byte
+            if ((p[0] & 0xC0) != 0x80) return false;
+            p += 1;
+            continue;
+        }
+
+        //    Three-byte form: [E0..EF] 2 subsequent [80..BF] bytes
+        //    We also must watch out for surrogates [0xD800..0xDFFF]
+        else if (c >= 0xE0 && c <= 0xEF) {
+            if (end - p < 2) return false; // need 2 more bytes
+            if ((p[0] & 0xC0) != 0x80 ||
+                (p[1] & 0xC0) != 0x80) return false;
+
+            // Minimal form checks for E0 and ED:
+            // E0 must not be followed by [80..9F], ED must not be followed by [A0..BF]
+            if (c == 0xE0 && (unsigned char)p[0] < 0xA0) return false;
+            if (c == 0xED && (unsigned char)p[0] > 0x9F) return false;
+
+            // Surrogate range check:
+            unsigned int code =
+                ((c & 0x0F) << 12) |
+                ((p[0] & 0x3F) << 6) |
+                (p[1] & 0x3F);
+            // Surrogates [0xD800..0xDFFF] are invalid in UTF-8
+            if (code >= 0xD800 && code <= 0xDFFF)
                 return false;
-            cp = (cp << 6) | (*bytes & 0x3F);
-            bytes += 1;
+
+            p += 2;
+            continue;
         }
 
-        if (cp > 0x10FFFF  // max code point by definition
-            /* the range from 0xd800 to 0xdfff is reserved
-               for use with UTF-16 and excluded from UTF-8 */
-            || (cp >= 0xD800 && cp <= 0xDFFF)
-            /* logically impossible situations */
-            || (cp <= 0x007F && bn != 1) || (cp >= 0x0080 && cp <= 0x07FF && bn != 2) ||
-            (cp >= 0x0800 && cp <= 0xFFFF && bn != 3) || (cp >= 0x10000 && cp <= 0x1FFFFF && bn != 4)) {
-            return false;
+        //    Four-byte form: [F0..F4] + 3 subsequent [80..BF] bytes
+        //    (UTF-8 up to 0x10FFFF; 0xF5..0xFF are invalid leading bytes)
+        else if (c >= 0xF0 && c <= 0xF4) {
+            if (end - p < 3) return false; // need 3 more bytes
+            if ((p[0] & 0xC0) != 0x80 ||
+                (p[1] & 0xC0) != 0x80 ||
+                (p[2] & 0xC0) != 0x80) return false;
+
+            // Check minimal form for F0, plus top-of-range for F4
+            if (c == 0xF0 && (unsigned char)p[0] < 0x90) return false;  // F0 90..BF ...
+            if (c == 0xF4 && (unsigned char)p[0] > 0x8F) return false;  // F4 80..8F
+
+            // Make sure the resulting code point is <= 0x10FFFF
+            unsigned int code =
+                ((c & 0x07) << 18) |
+                ((p[0] & 0x3F) << 12) |
+                ((p[1] & 0x3F) << 6) |
+                (p[2] & 0x3F);
+            if (code > 0x10FFFF)
+                return false;
+
+            p += 3;
+            continue;
         }
+
+        // Anything else in [80..C1], [F5..FF], or missing bytes is invalid:
+        return false;
     }
 
     return true;
 }
+
 /*************************/
-const QString detectCharset(const QByteArray& byteArray) {
+const QString detectCharset(const QByteArray& byteArray)
+{
     if (validateUTF8(byteArray))
         return QStringLiteral("UTF-8");
-    /* legacy encodings aren't supported by Qt >= Qt6 */
+    /* fallback: legacy encodings are no longer supported on Qt6+ by default,
+       so we just return ISO-8859-1 here */
     return QStringLiteral("ISO-8859-1");
 }
 
-}  // namespace FeatherPad
+}
