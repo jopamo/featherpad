@@ -1019,6 +1019,72 @@ void FPwin::deleteTabPage(int tabIndex, bool saveToList, bool closeWithLastTab) 
         close();
 }
 /*************************/
+// This closes either the current page or the right-clicked side-pane item but
+// never the right-clicked tab because the tab context menu has no closing item.
+void FPwin::closePage() {
+    if (!isReady())
+        return;
+
+    pauseAutoSaving(true);
+
+    QListWidgetItem* curItem = nullptr;
+    int tabIndex = -1;
+    int index = -1;  // tab index or side-pane row
+
+    // Identify which tab we’re closing (either current or right-clicked)
+    if (sidePane_ && rightClicked_ >= 0) {
+        index = rightClicked_;
+        tabIndex = ui->tabWidget->indexOf(sideItems_.value(sidePane_->listWidget()->item(rightClicked_)));
+        if (tabIndex != ui->tabWidget->currentIndex())
+            curItem = sidePane_->listWidget()->currentItem();
+    }
+    else {
+        tabIndex = ui->tabWidget->currentIndex();
+        if (tabIndex == -1) {
+            pauseAutoSaving(false);
+            return;
+        }
+        index = tabIndex;
+        if (sidePane_ && !sideItems_.isEmpty()) {
+            if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(tabIndex))) {
+                if (QListWidgetItem* wi = sideItems_.key(tabPage))
+                    index = sidePane_->listWidget()->row(wi);
+            }
+        }
+    }
+
+    // Prompt to save/discard/etc
+    DOCSTATE state = savePrompt(tabIndex, false, index - 1, index + 1, false, curItem);
+    if (state == UNDECIDED) {
+        // "Cancel" → do nothing, keep it open
+        pauseAutoSaving(false);
+        return;
+    }
+
+    // If it’s DISCARDED or SAVED, go ahead and close
+    deleteTabPage(tabIndex);
+
+    // Cleanup
+    int count = ui->tabWidget->count();
+    if (count == 0) {
+        ui->actionReload->setDisabled(true);
+        ui->actionSave->setDisabled(true);
+        enableWidgets(false);
+    }
+    else {
+        if (count == 1)
+            updateGUIForSingleTab(true);
+
+        if (curItem)  // restore the current item
+            sidePane_->listWidget()->setCurrentItem(curItem);
+
+        if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
+            tabPage->textEdit()->setFocus();
+    }
+
+    pauseAutoSaving(false);
+}
+/*************************/
 // Here, "first" is the index/row, to whose right/bottom all tabs/rows are to be closed.
 // Similarly, "last" is the index/row, to whose left/top all tabs/rows are to be closed.
 // A negative value means including the start for "first" and the end for "last".
@@ -1225,6 +1291,25 @@ bool FPwin::closePages(int first, int last, bool saveFilesList) {
     return keep;
 }
 /*************************/
+void FPwin::closeAllPages() {
+    closePages(-1, -1);
+}
+/*************************/
+void FPwin::closeNextPages() {
+    closePages(rightClicked_, -1);
+}
+/*************************/
+void FPwin::closePreviousPages() {
+    closePages(-1, rightClicked_);
+}
+/*************************/
+void FPwin::closeOtherPages() {
+    /* NOTE: Because saving as root is possible, we can't close the previous pages
+             here. They will be closed by closePages() if needed. */
+    closePreviousPages_ = true;
+    closePages(rightClicked_, -1);
+}
+/*************************/
 void FPwin::copyTabFileName() {
     if (rightClicked_ < 0)
         return;
@@ -1252,25 +1337,6 @@ void FPwin::copyTabFilePath() {
         if (!str.isEmpty())
             QApplication::clipboard()->setText(str);
     }
-}
-/*************************/
-void FPwin::closeAllPages() {
-    closePages(-1, -1);
-}
-/*************************/
-void FPwin::closeNextPages() {
-    closePages(rightClicked_, -1);
-}
-/*************************/
-void FPwin::closePreviousPages() {
-    closePages(-1, rightClicked_);
-}
-/*************************/
-void FPwin::closeOtherPages() {
-    /* NOTE: Because saving as root is possible, we can't close the previous pages
-             here. They will be closed by closePages() if needed. */
-    closePreviousPages_ = true;
-    closePages(rightClicked_, -1);
 }
 /*************************/
 void FPwin::dragEnterEvent(QDragEnterEvent* event) {
@@ -2019,68 +2085,6 @@ void FPwin::displayOutput() {
 /*************************/
 void FPwin::displayError() {
     displayMessage(true);
-}
-/*************************/
-// This closes either the current page or the right-clicked side-pane item but
-// never the right-clicked tab because the tab context menu has no closing item.
-void FPwin::closePage() {
-    if (!isReady())
-        return;
-
-    pauseAutoSaving(true);
-
-    QListWidgetItem* curItem = nullptr;
-    int tabIndex = -1;
-    int index = -1;                       // tab index or side-pane row
-    if (sidePane_ && rightClicked_ >= 0)  // close the right-clicked item
-    {
-        index = rightClicked_;
-        tabIndex = ui->tabWidget->indexOf(sideItems_.value(sidePane_->listWidget()->item(rightClicked_)));
-        if (tabIndex != ui->tabWidget->currentIndex())
-            curItem = sidePane_->listWidget()->currentItem();
-    }
-    else  // close the current page
-    {
-        tabIndex = ui->tabWidget->currentIndex();
-        if (tabIndex == -1)  // not needed
-        {
-            pauseAutoSaving(false);
-            return;
-        }
-        index = tabIndex;  // may need to be converted to the side-pane row
-        if (sidePane_ && !sideItems_.isEmpty()) {
-            if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->widget(tabIndex))) {
-                if (QListWidgetItem* wi = sideItems_.key(tabPage))
-                    index = sidePane_->listWidget()->row(wi);
-            }
-        }
-    }
-
-    if (savePrompt(tabIndex, false, index - 1, index + 1, false, curItem) != SAVED) {
-        pauseAutoSaving(false);
-        return;
-    }
-
-    deleteTabPage(tabIndex);
-    int count = ui->tabWidget->count();
-    if (count == 0) {
-        ui->actionReload->setDisabled(true);
-        ui->actionSave->setDisabled(true);
-        enableWidgets(false);
-    }
-    else  // set focus to text-edit
-    {
-        if (count == 1)
-            updateGUIForSingleTab(true);
-
-        if (curItem)  // restore the current item
-            sidePane_->listWidget()->setCurrentItem(curItem);
-
-        if (TabPage* tabPage = qobject_cast<TabPage*>(ui->tabWidget->currentWidget()))
-            tabPage->textEdit()->setFocus();
-    }
-
-    pauseAutoSaving(false);
 }
 /*************************/
 void FPwin::closeTabAtIndex(int tabIndex) {
