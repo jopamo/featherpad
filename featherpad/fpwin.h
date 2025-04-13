@@ -279,6 +279,15 @@ class FPwin : public QMainWindow {
     void stealFocus(QWidget* w);
     void stealFocus();
     void addRecentFile(const QString& file);
+    bool showSaveDialogAndSetFileName(QString& fname, const QString& filter, const QString& title);
+    void removeTrailingSpacesIfNeeded(TextEdit* textEdit);
+    bool writeFileWithEncoding(const QString& fname, TextEdit* textEdit, bool& MSWinLineEnd);
+    void handleSaveFailure(const QString& fname);
+    bool writeUtf16File(const QString& fname, TextEdit* textEdit);
+    bool promptAndWriteWithChosenEOL(const QString& fname,
+                                     TextEdit* textEdit,
+                                     const QString& encoding,
+                                     bool& MSWinLineEnd);
 
     QActionGroup* aGroup_;
     QString lastFile_;                          // The last opened or saved file (for file dialogs).
